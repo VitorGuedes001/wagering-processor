@@ -1,4 +1,4 @@
-import { CurrencyMismatchError, InsufficientFundsError, InvalidMoneyError } from './errors';
+import { CurrencyMismatchError, InsufficientFundsError, InvalidMoneyError, LedgerArithmeticError } from './errors';
 import { Money } from './money';
 import { LedgerDirection, WalletLedgerEntry } from './wallet-ledger-entry';
 
@@ -121,7 +121,7 @@ export class Wallet {
   debit(money: Money, transactionId: string, entryId: string, at: Date): WalletLedgerEntry {
     this.assertSameCurrency(money);
     if (!money.isPositive()) {
-      throw new InvalidMoneyError('Debit money must be positive');
+      throw new LedgerArithmeticError('Debit money must be positive');
     }
     if (!this.canDebit(money)) {
       throw new InsufficientFundsError('Insufficient funds for debit');
@@ -154,7 +154,7 @@ export class Wallet {
   credit(money: Money, transactionId: string, entryId: string, at: Date): WalletLedgerEntry {
     this.assertSameCurrency(money);
     if (!money.isPositive()) {
-      throw new InvalidMoneyError('Credit money must be positive');
+      throw new LedgerArithmeticError('Credit money must be positive');
     }
 
     const before = this._balance;

@@ -3,6 +3,7 @@ import {
   CurrencyMismatchError,
   InsufficientFundsError,
   InvalidMoneyError,
+  LedgerArithmeticError,
 } from '../../src/domain/errors';
 import { Money } from '../../src/domain/money';
 import { Wallet } from '../../src/domain/wallet';
@@ -203,7 +204,7 @@ describe('Wallet', () => {
       expect(wallet.updatedAt).toBe(openedAt);
     });
 
-    it('throws InvalidMoneyError when debit amount is zero or negative and leaves wallet unchanged', () => {
+    it('throws LedgerArithmeticError when debit amount is zero or negative and leaves wallet unchanged', () => {
       const { wallet } = Wallet.open({
         id: 'wallet-1',
         playerId: 'player-1',
@@ -215,11 +216,11 @@ describe('Wallet', () => {
 
       expect(() =>
         wallet.debit(money('0.00', 'BRL'), 'tx-zero', 'entry-zero', nextAt),
-      ).toThrow(InvalidMoneyError);
+      ).toThrow(LedgerArithmeticError);
 
       expect(() =>
         wallet.debit(money('-10.00', 'BRL'), 'tx-neg', 'entry-neg', nextAt),
-      ).toThrow(InvalidMoneyError);
+      ).toThrow(LedgerArithmeticError);
 
       expect(wallet.balance.equals(money('100.00', 'BRL'))).toBe(true);
       expect(wallet.version).toBe(1);
@@ -274,7 +275,7 @@ describe('Wallet', () => {
       expect(entry.isBalanced()).toBe(true);
     });
 
-    it('throws InvalidMoneyError when credit amount is zero or negative and leaves wallet unchanged', () => {
+    it('throws LedgerArithmeticError when credit amount is zero or negative and leaves wallet unchanged', () => {
       const { wallet } = Wallet.open({
         id: 'wallet-1',
         playerId: 'player-1',
@@ -286,11 +287,11 @@ describe('Wallet', () => {
 
       expect(() =>
         wallet.credit(money('0.00', 'BRL'), 'tx-zero', 'entry-zero', nextAt),
-      ).toThrow(InvalidMoneyError);
+      ).toThrow(LedgerArithmeticError);
 
       expect(() =>
         wallet.credit(money('-5.00', 'BRL'), 'tx-neg', 'entry-neg', nextAt),
-      ).toThrow(InvalidMoneyError);
+      ).toThrow(LedgerArithmeticError);
 
       expect(wallet.balance.equals(money('100.00', 'BRL'))).toBe(true);
       expect(wallet.version).toBe(1);

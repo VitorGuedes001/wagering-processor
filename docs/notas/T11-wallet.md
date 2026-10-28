@@ -30,7 +30,7 @@
   - `docs/notas/T11-wallet.md`
 - **Assinaturas públicas:** mantidas exatamente como congeladas no M0 (`T01`).
 - **Alternativas descartadas e motivo:**
-  - *Chamar `Money.zero(currency)` dentro de `Wallet.open`:* substituído por `props.initialBalance.subtract(props.initialBalance)` para derivar o zero na mesma moeda exclusivamente via método de instância do `Money` recebido.
+  - *Derivar o zero com `initialBalance.subtract(initialBalance)`:* usado enquanto a T10 não estava na `main`. Depois do rebase, voltou a ser `Money.zero` (commit `36d7874`).
   - *Deixar a validação de moeda em `WalletLedgerEntry.create` para o `Money.add`/`subtract`:* descartado porque `Money` lança `CurrencyMismatchError`, enquanto `MODELAGEM 6` especifica `LedgerArithmeticError` quando as moedas de `money`, `balanceBefore` e `balanceAfter` diferem no lançamento.
 
 ## Ordem de leitura do diff
@@ -56,7 +56,7 @@ bun run tarefa:gate
 
 ## Fora de escopo / dívida
 
-- O helper `money(...)` nos testes unitários delega para `Money.from` / `Money.fromPersistence` e possui fallback local caso `T10` ainda não esteja mergeada na `main`. Assim que `T10` estiver na `main`, o caminho real de `Money` é exercitado automaticamente.
+- (nenhum). O `Money` falso que os testes usavam antes da T10 foi removido no commit `36d7874`: os testes usam só o `Money` real.
 
 ## Revisão cruzada
 
@@ -64,9 +64,9 @@ Preenchido pelo agente da outra ferramenta.
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
-| 1 | menor | `docs/notas/T11-wallet.md:33`, `:59` | Nota desatualizada após `36d7874`. "Alternativas descartadas" ainda diz que `Money.zero` foi substituído por `initialBalance.subtract(initialBalance)`, mas o código voltou a usar `Money.zero` (`wallet.ts:69`). "Fora de escopo / dívida" ainda cita o fallback local do helper `money(...)`, que o mesmo commit removeu. O humano lê a nota para entender o diff (EXECUCAO, clareza). | |
-| 2 | menor | `src/domain/wallet-ledger-entry.ts:68`, `:71`; `src/domain/wallet.ts:51` | Há guardas além do que MODELAGEM 6 e 3 listam: `balanceBefore` negativo, `walletVersion` inteiro `>= 1` (ambos lançam `LedgerArithmeticError`) e `initialBalance` negativo em `open` (lança `InvalidMoneyError`). Elas são coerentes com o `CHECK` do schema e com D16, mas são escolhas que os docs não fazem e que não estão em "Decisões pendentes" nem em "Por quê" (AGENTS, escopo 2). Proposta: registrar na nota ou na MODELAGEM 6. | |
-| 3 | menor | `src/domain/wallet.ts:123-125`, `:156-158` | Quando `debit`/`credit` recebem zero ou valor negativo, lançam `InvalidMoneyError`. Pela MODELAGEM 10.4, esse erro vira `INVALID_PAYLOAD` (400) na borda. Chegar aqui com valor não positivo, porém, é bug, porque `decideWager` filtra antes e `LOSS` não move saldo. Se escapar até a borda, o bug fica mascarado como erro do cliente, em vez de virar 500. O tipo do erro não está fixado nos docs: MODELAGEM 3 diz só "rejeitam zero", e o JSDoc diz "ou erro". Sugestão: confirmar a escolha ou registrá-la como decisão. | |
+| 1 | menor | `docs/notas/T11-wallet.md:33`, `:59` | Nota desatualizada após `36d7874`. "Alternativas descartadas" ainda diz que `Money.zero` foi substituído por `initialBalance.subtract(initialBalance)`, mas o código voltou a usar `Money.zero` (`wallet.ts:69`). "Fora de escopo / dívida" ainda cita o fallback local do helper `money(...)`, que o mesmo commit removeu. O humano lê a nota para entender o diff (EXECUCAO, clareza). | Corrigido: as duas passagens agora descrevem o estado pós-rebase. |
+| 2 | menor | `src/domain/wallet-ledger-entry.ts:68`, `:71`; `src/domain/wallet.ts:51` | Há guardas além do que MODELAGEM 6 e 3 listam: `balanceBefore` negativo, `walletVersion` inteiro `>= 1` (ambos lançam `LedgerArithmeticError`) e `initialBalance` negativo em `open` (lança `InvalidMoneyError`). Elas são coerentes com o `CHECK` do schema e com D16, mas são escolhas que os docs não fazem e que não estão em "Decisões pendentes" nem em "Por quê" (AGENTS, escopo 2). Proposta: registrar na nota ou na MODELAGEM 6. | Aceito pelo humano e registrado como D58 na MODELAGEM. |
+| 3 | menor | `src/domain/wallet.ts:123-125`, `:156-158` | Quando `debit`/`credit` recebem zero ou valor negativo, lançam `InvalidMoneyError`. Pela MODELAGEM 10.4, esse erro vira `INVALID_PAYLOAD` (400) na borda. Chegar aqui com valor não positivo, porém, é bug, porque `decideWager` filtra antes e `LOSS` não move saldo. Se escapar até a borda, o bug fica mascarado como erro do cliente, em vez de virar 500. O tipo do erro não está fixado nos docs: MODELAGEM 3 diz só "rejeitam zero", e o JSDoc diz "ou erro". Sugestão: confirmar a escolha ou registrá-la como decisão. | Humano decidiu por `LedgerArithmeticError` (bug → 500), D59. `debit`/`credit` e os dois testes trocados. `open` com saldo negativo continua `InvalidMoneyError` (D58). |
 
 Verificado sem achado:
 
