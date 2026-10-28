@@ -1,34 +1,25 @@
 import { describe, expect, it } from 'bun:test';
-import {
-  type EventContext,
-  IntegrationEvent,
-  type IntegrationEventProps,
-} from '../../src/domain/events/integration-event';
+import type { EventContext } from '../../src/domain/events/integration-event';
+import { WagerTransactionProcessed } from '../../src/domain/events/wager-transaction-processed';
 import { InboxMessage } from '../../src/domain/inbox-message';
+import { Money } from '../../src/domain/money';
 import {
   OUTBOX_BACKOFF_BASE_MS,
   OUTBOX_BACKOFF_MAX_MS,
   OutboxMessage,
 } from '../../src/domain/outbox-message';
+import { WagerTransaction } from '../../src/domain/wager-transaction';
 
-class DummyIntegrationEvent extends IntegrationEvent<{ ok: boolean }> {
-  readonly eventType = 'DummyIntegrationEvent';
-  readonly version = 1;
-
-  constructor(props: IntegrationEventProps<{ ok: boolean }>) {
-    super(props);
-  }
-
-  static create(ctx: EventContext, aggregateId = 'agg-1'): DummyIntegrationEvent {
-    return new DummyIntegrationEvent({
-      eventId: ctx.eventId,
-      aggregateId,
-      correlationId: ctx.correlationId,
-      ...(ctx.causationId !== undefined ? { causationId: ctx.causationId } : {}),
-      occurredAt: ctx.occurredAt,
-      data: { ok: true },
-    });
-  }
+/** Evento real (T12 + T13): o `OPENING` nasce `PROCESSED`, então serve de fonte sem test double. */
+function makeEvent(ctx: EventContext, transactionId = 'tx-open-1'): WagerTransactionProcessed {
+  const opening = WagerTransaction.opening({
+    id: transactionId,
+    walletId: 'wallet-1',
+    playerId: 'player-1',
+    money: Money.from({ amount: '50.00', currency: 'BRL' }),
+    at: new Date('2026-04-19T14:59:59.000Z'),
+  });
+  return WagerTransactionProcessed.from(opening, ctx);
 }
 
 describe('InboxMessage', () => {
@@ -91,31 +82,31 @@ describe('OutboxMessage', () => {
   };
 
   it('enqueues an integration event with attempts = 0 and nextAttemptAt = occurredAt', () => {
-    const event = DummyIntegrationEvent.create(ctx, 'wallet-42');
+    const event = makeEvent(ctx, 'tx-42');
     const outbox = OutboxMessage.enqueue(event);
 
     expect(outbox.id).toBe('evt-100');
-    expect(outbox.aggregateId).toBe('wallet-42');
-    expect(outbox.eventType).toBe('DummyIntegrationEvent');
+    expect(outbox.aggregateId).toBe('tx-42');
+    expect(outbox.eventType).toBe('WagerTransactionProcessed');
     expect(outbox.occurredAt).toEqual(occurredAt);
     expect(outbox.attempts).toBe(0);
     expect(outbox.nextAttemptAt).toEqual(occurredAt);
     expect(outbox.publishedAt).toBeUndefined();
     expect(outbox.isPending()).toBe(true);
-    expect(outbox.payload).toEqual({
+    expect(outbox.payload).toEqual({ ...event.toJSON() });
+    expect(outbox.payload).toMatchObject({
       eventId: 'evt-100',
-      eventType: 'DummyIntegrationEvent',
-      aggregateId: 'wallet-42',
+      eventType: 'WagerTransactionProcessed',
+      aggregateId: 'tx-42',
       correlationId: 'corr-100',
       causationId: 'cause-100',
       occurredAt: '2026-04-19T15:00:00.000Z',
       version: 1,
-      data: { ok: true },
     });
   });
 
   it('evaluates isDue and markPublished transitions accurately', () => {
-    const event = DummyIntegrationEvent.create(ctx);
+    const event = makeEvent(ctx);
     const outbox = OutboxMessage.enqueue(event);
 
     const before = new Date(occurredAt.getTime() - 1);
@@ -160,7 +151,7 @@ describe('OutboxMessage', () => {
   });
 
   it('U-05: scheduleRetry follows min(2^n, 60) seconds with fixed clock and no attempt cap (D12)', () => {
-    const event = DummyIntegrationEvent.create(ctx);
+    const event = makeEvent(ctx);
     const outbox = OutboxMessage.enqueue(event);
     const fixedNow = new Date('2026-04-19T16:00:00.000Z');
 

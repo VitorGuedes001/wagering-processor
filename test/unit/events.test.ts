@@ -38,19 +38,7 @@ function makeWallet(overrides: Partial<WalletState> = {}): Wallet {
     updatedAt: now,
     ...overrides,
   };
-  try {
-    return Wallet.rehydrate(state);
-  } catch {
-    return Reflect.construct(Wallet, [
-      state.id,
-      state.playerId,
-      state.currency,
-      state.balance,
-      state.version,
-      state.createdAt,
-      state.updatedAt,
-    ]) as Wallet;
-  }
+  return Wallet.rehydrate(state);
 }
 
 function makeLedgerEntry(overrides: Partial<LedgerEntryState> = {}): WalletLedgerEntry {
@@ -67,21 +55,7 @@ function makeLedgerEntry(overrides: Partial<LedgerEntryState> = {}): WalletLedge
     createdAt: now,
     ...overrides,
   };
-  try {
-    return WalletLedgerEntry.rehydrate(state);
-  } catch {
-    return Reflect.construct(WalletLedgerEntry, [
-      state.id,
-      state.walletId,
-      state.transactionId,
-      state.walletVersion,
-      state.direction,
-      state.money,
-      state.balanceBefore,
-      state.balanceAfter,
-      state.createdAt,
-    ]) as WalletLedgerEntry;
-  }
+  return WalletLedgerEntry.rehydrate(state);
 }
 
 function makeTransaction(overrides: Partial<WagerTransactionState> = {}): WagerTransaction {
@@ -106,33 +80,7 @@ function makeTransaction(overrides: Partial<WagerTransactionState> = {}): WagerT
     processedAt: now,
     ...overrides,
   };
-  try {
-    return WagerTransaction.rehydrate(state);
-  } catch {
-    return Reflect.construct(WagerTransaction, [
-      state.id,
-      state.providerId,
-      state.externalTransactionId,
-      state.idempotencyKey,
-      state.payloadHash,
-      state.walletId,
-      state.playerId,
-      state.roundId,
-      state.gameId,
-      state.kind,
-      state.money,
-      state.referenceExternalTransactionId,
-      state.createdAt,
-      state.status,
-      state.updatedAt,
-      state.referenceTransactionId,
-      state.failureCode,
-      state.processedAt,
-      state.balanceAfter,
-      state.referenceAttempts,
-      state.nextReferenceAttemptAt,
-    ]) as WagerTransaction;
-  }
+  return WagerTransaction.rehydrate(state);
 }
 
 describe('IntegrationEvent & Subclasses (U-03, U-04)', () => {
@@ -231,18 +179,12 @@ describe('IntegrationEvent & Subclasses (U-03, U-04)', () => {
   });
 
   it('U-04: WagerTransactionProcessed.from omits provider fields on OPENING transaction (D42)', () => {
-    const openingTx = makeTransaction({
+    const openingTx = WagerTransaction.opening({
       id: 'tx-open-1',
-      providerId: undefined,
-      externalTransactionId: undefined,
-      idempotencyKey: undefined,
-      payloadHash: undefined,
-      roundId: undefined,
-      gameId: undefined,
-      kind: WagerTransactionKind.Opening,
+      walletId: 'wallet-1',
+      playerId: 'player-1',
       money: makeMoney('50.00', 'BRL'),
-      balanceAfter: makeMoney('50.00', 'BRL'),
-      processedAt,
+      at: processedAt,
     });
 
     const event = WagerTransactionProcessed.from(openingTx, baseCtx);
@@ -352,6 +294,42 @@ describe('IntegrationEvent & Subclasses (U-03, U-04)', () => {
     expect(json.data.money).not.toBeInstanceOf(Money);
     expect(json.data.balanceBefore).not.toBeInstanceOf(Money);
     expect(json.data.balanceAfter).not.toBeInstanceOf(Money);
+  });
+
+  it('WalletBalanceChanged.from mirrors the entry produced by Wallet.open and Wallet.debit', () => {
+    const at = new Date('2026-04-19T12:00:00.000Z');
+    const { wallet, openingEntry } = Wallet.open({
+      id: 'wallet-7',
+      playerId: 'player-7',
+      initialBalance: makeMoney('100.00', 'BRL'),
+      openingTransactionId: 'tx-open-7',
+      openingEntryId: 'entry-open-7',
+      at,
+    });
+    expect(openingEntry).toBeDefined();
+    const opened = WalletBalanceChanged.from(wallet, openingEntry as WalletLedgerEntry, baseCtx).toJSON();
+    expect(opened.data).toEqual({
+      walletId: 'wallet-7',
+      transactionId: 'tx-open-7',
+      direction: LedgerDirection.Credit,
+      money: { amount: '100.00', currency: 'BRL' },
+      balanceBefore: { amount: '0.00', currency: 'BRL' },
+      balanceAfter: { amount: '100.00', currency: 'BRL' },
+      walletVersion: 1,
+    });
+
+    const entry = wallet.debit(makeMoney('30.00', 'BRL'), 'tx-bet-7', 'entry-bet-7', at);
+    const debited = WalletBalanceChanged.from(wallet, entry, baseCtx).toJSON();
+    expect(debited.aggregateId).toBe('wallet-7');
+    expect(debited.data).toEqual({
+      walletId: 'wallet-7',
+      transactionId: 'tx-bet-7',
+      direction: LedgerDirection.Debit,
+      money: { amount: '30.00', currency: 'BRL' },
+      balanceBefore: { amount: '100.00', currency: 'BRL' },
+      balanceAfter: { amount: '70.00', currency: 'BRL' },
+      walletVersion: 2,
+    });
   });
 
   it('U-04: WagerTransactionPendingReference.from serializes pending reference payload', () => {
