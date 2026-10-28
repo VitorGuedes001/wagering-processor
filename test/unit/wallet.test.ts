@@ -4,83 +4,15 @@ import {
   InsufficientFundsError,
   InvalidMoneyError,
 } from '../../src/domain/errors';
-import { Money, type MoneyProps } from '../../src/domain/money';
+import { Money } from '../../src/domain/money';
 import { Wallet } from '../../src/domain/wallet';
 import { LedgerDirection } from '../../src/domain/wallet-ledger-entry';
 
-function parseCents(raw: string): bigint {
-  const negative = raw.startsWith('-');
-  const unsigned = negative ? raw.slice(1) : raw;
-  const [whole = '0', frac = '00'] = unsigned.split('.');
-  const cents = BigInt(whole) * 100n + BigInt(frac);
-  return negative ? -cents : cents;
-}
-
-function formatCents(cents: bigint): string {
-  const negative = cents < 0n;
-  const abs = negative ? -cents : cents;
-  const whole = abs / 100n;
-  const frac = (abs % 100n).toString().padStart(2, '0');
-  return `${negative ? '-' : ''}${whole.toString()}.${frac}`;
-}
-
-function makeFallbackMoney(cents: bigint, currency: string): Money {
-  const assertCurrency = (other: Money): bigint => {
-    if (other.currency !== currency) {
-      throw new CurrencyMismatchError(`Currency mismatch: ${currency} vs ${other.currency}`);
-    }
-    return (other as unknown as { cents: bigint }).cents;
-  };
-
-  const instance = Object.create(Money.prototype) as Money;
-  Object.assign(instance, {
-    cents,
-    currency,
-    add(other: Money): Money {
-      return makeFallbackMoney(cents + assertCurrency(other), currency);
-    },
-    subtract(other: Money): Money {
-      return makeFallbackMoney(cents - assertCurrency(other), currency);
-    },
-    negate(): Money {
-      return makeFallbackMoney(-cents, currency);
-    },
-    isZero(): boolean {
-      return cents === 0n;
-    },
-    isPositive(): boolean {
-      return cents > 0n;
-    },
-    isNegative(): boolean {
-      return cents < 0n;
-    },
-    isLessThan(other: Money): boolean {
-      return cents < assertCurrency(other);
-    },
-    equals(other: Money): boolean {
-      return cents === assertCurrency(other);
-    },
-    toJSON(): MoneyProps {
-      return { amount: formatCents(cents), currency };
-    },
-    toString(): string {
-      return `${formatCents(cents)} ${currency}`;
-    },
-  });
-  return instance;
-}
-
+/** `Money` real (T10). Negativo só existe vindo do banco, por isso `fromPersistence`. */
 function money(raw: string, currency = 'BRL'): Money {
-  try {
-    return raw.startsWith('-')
-      ? Money.fromPersistence(raw, currency)
-      : Money.from({ amount: raw, currency });
-  } catch (err) {
-    if (err instanceof Error && err.message.includes('T10')) {
-      return makeFallbackMoney(parseCents(raw), currency);
-    }
-    throw err;
-  }
+  return raw.startsWith('-')
+    ? Money.fromPersistence(raw, currency)
+    : Money.from({ amount: raw, currency });
 }
 
 describe('Wallet', () => {

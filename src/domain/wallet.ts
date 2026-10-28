@@ -1,5 +1,5 @@
 import { CurrencyMismatchError, InsufficientFundsError, InvalidMoneyError } from './errors';
-import type { Money } from './money';
+import { Money } from './money';
 import { LedgerDirection, WalletLedgerEntry } from './wallet-ledger-entry';
 
 /** Forma persistida, já com tipos de domínio (D45). */
@@ -66,7 +66,7 @@ export class Wallet {
       return { wallet };
     }
 
-    const zeroMoney = props.initialBalance.subtract(props.initialBalance);
+    const zeroMoney = Money.zero(props.initialBalance.currency);
     const openingEntry = WalletLedgerEntry.create({
       id: props.openingEntryId,
       walletId: props.id,
