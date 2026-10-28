@@ -1,10 +1,32 @@
 # T01 — Contratos 🔒
 
-> Estado: Abordagem · Raia: H (em par com C) · Revisor: C · Branch: `t01-contratos`
+> Estado: Testada · Raia: H (em par com C) · Revisor: G (ver "Revisão cruzada") · Branch: `t01-contratos`
 
 ## O que muda
 
-Preenchido depois da implementação.
+Só contratos: nenhuma regra de negócio implementada. Todo corpo de método lança
+`notImplemented('Txx')`.
+
+| Arquivo | O que define |
+|---|---|
+| `src/domain/not-implemented.ts` | stub que falha alto, com a tarefa dona |
+| `src/domain/failure-code.ts` | **completo**: os 11 `FailureCode` de MODELAGEM 10.1, documentados |
+| `src/domain/errors.ts` | **completo**: `DomainError` e as 6 exceções de MODELAGEM 10.4 |
+| `src/domain/money.ts` | `MoneyProps`; `Money` com `cents: bigint` privado e a API de §6.1 + `fromPersistence` |
+| `src/domain/wallet-ledger-entry.ts` | `LedgerDirection`; entrada imutável com `walletVersion` (D16) |
+| `src/domain/wallet.ts` | `Wallet` com `open → OpenedWallet`, `canDebit`, `debit`/`credit` devolvendo o lançamento |
+| `src/domain/wager-transaction.ts` | kinds, status, `SubmittableKind`, `BackoffPolicy` (D43), `opening` (D42), transições com snapshot (D46) |
+| `src/domain/events/*.ts` | envelope abstrato (construtor completo) e os 4 eventos com `eventType`/`version` no tipo |
+| `src/domain/inbox-message.ts`, `outbox-message.ts` | como §6.5, com as constantes de backoff do outbox (D12) |
+| `src/domain/decide-wager.ts` | `WagerDecision` e a função pura de MODELAGEM 5 |
+| `src/domain/reconcile.ts` | `ReconciliationResult` e a função de MODELAGEM 11 |
+| `src/domain/payload-hash.ts` | `PayloadHashInput`, `canonicalJson`, `payloadHash` |
+| `src/application/contracts.ts` | comandos, views, `SubmitOutcome`, `RequestErrorCode` (D49, D50) |
+| `src/application/ports.ts` | UoW, 5 repositórios, publisher, relógio, ids, identidade, `TransientInfrastructureError` |
+| `docs/MODELAGEM.md`, `docs/ARQUITETURA.md` | D42–D50 registradas |
+
+O diff é grande (cerca de 1,3 mil linhas), mas a maior parte é comentário de
+documentação. Não há lógica para revisar, só forma e nomes.
 
 ## Por quê
 
@@ -142,18 +164,56 @@ Alternativa: tudo em `ports.ts`, como diz a linha do T01 na EXECUCAO.
 **Aprovação do humano:** aprovado como proposto em 28/10/2026. P1–P9 viraram
 D42–D47 (MODELAGEM §1) e D48–D50 (ARQUITETURA §1).
 
+### Ajustes derivados (decorrem dos docs, mas confira)
+
+Não são decisões novas: são consequências diretas dos docs aprovados. Ficam
+listados para a revisão não deixá-los passar em silêncio.
+
+1. `Wallet.open` recebe `openingEntryId`. O lançamento precisa de id, como em
+   `debit`/`credit`.
+2. Os 6 campos de provedor da `WagerTransaction` são `string | undefined`, por
+   causa do `OPENING` (SCHEMA 2.2, `wager_tx_provider_fields_ck`). Com isso, o
+   `WagerTransactionProcessedData` também os tem opcionais. `Rejected` e
+   `PendingReference` nunca são `OPENING` e os mantêm obrigatórios.
+3. A `WagerTransaction` ganha `updatedAt` (coluna `updated_at` do SCHEMA), para o
+   `at` de `reject`/`fail`/`markPendingReference` ter destino.
+4. `OutboxMessage.enqueue(event)` sem `at`, como em §6.5: agenda para
+   `event.occurredAt`. A MODELAGEM 7 tinha `enqueue(event, at)`, redundante.
+5. `nextAttemptAt` do outbox é obrigatório (`NOT NULL`, é o lease, SCHEMA 2.5), e
+   não opcional como no esqueleto.
+6. `decideWager` recebe a `BackoffPolicy` (consequência de D43).
+7. Helpers privados, como o `assertSameCurrency` do esqueleto, ficam fora do
+   contrato: são detalhe de implementação.
+8. `CreateWalletCommand`, `WalletView` e `CreateWalletOutcome` foram criados (o
+   `CreateWallet` precisa deles), com os formatos de CHALLENGE §9.
+9. Datas dentro de `data` dos eventos são string ISO, como `occurredAt` no
+   envelope (JSON estável, §11).
+
 ## Ordem de leitura do diff
 
-Preenchida durante a implementação. Ordem prevista: `failure-code` → `errors` →
-`money` → `wallet-ledger-entry` → `wallet` → `wager-transaction` →
-`decide-wager` → eventos → inbox/outbox → `reconcile` → `payload-hash` →
-`application/contracts` → `application/ports`.
+1. `docs/notas/T01-contratos.md` — abordagem e ajustes derivados (esta nota)
+2. `src/domain/failure-code.ts`, `errors.ts` — vocabulário de falha, completo
+3. `src/domain/money.ts` — `bigint` privado e os dois caminhos de entrada (`from` vs `fromPersistence`)
+4. `src/domain/wallet-ledger-entry.ts` → `wallet.ts` — o lançamento nasce de `debit`/`credit`
+5. `src/domain/wager-transaction.ts` — o contrato mais denso: estados, transições (D46), `opening` (D42)
+6. `src/domain/decide-wager.ts` — onde a regra de §7 vai morar (T16)
+7. `src/domain/events/integration-event.ts` → os 4 eventos — o que cada um carrega
+8. `src/domain/inbox-message.ts`, `outbox-message.ts`
+9. `src/domain/reconcile.ts`, `payload-hash.ts`
+10. `src/application/contracts.ts` — o que HTTP e SQS enxergam
+11. `src/application/ports.ts` — o que a infraestrutura precisa implementar
 
 ## Como verificar
 
 ```bash
 bun run tarefa:gate
 ```
+
+Resultado: typecheck ✔, skills ✔, arquitetura ✔. Unidade, integração e
+concorrência ainda não têm testes. Checagens manuais: nenhum import de Nest,
+MikroORM, AWS SDK ou zod em `src/domain` ou `src/application`, e nenhum
+`parseFloat`, `Number(`, `toFixed`, `Math.` ou propriedade de dinheiro tipada
+`number`.
 
 ## Pedidos ao integrador
 
@@ -163,6 +223,11 @@ bun run tarefa:gate
 ## Fora de escopo / dívida
 
 - `not-implemented.ts` sai quando o último stub do domínio for implementado (M1).
+- Os tipos das **consultas** (extrato paginado, transação completa) não estão
+  congelados: ficam com T31/T43, que definem o formato de ARQUITETURA 6.3 sobre
+  os repositórios.
+- A revisão cruzada deve ser feita no **Antigravity**: a implementação foi do
+  Claude, e o quadro dizia "revisor C" só porque a raia era H.
 
 ## Revisão cruzada
 
