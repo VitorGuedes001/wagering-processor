@@ -16,7 +16,7 @@ a do worktree.
 | Tarefa | Onda | Raia | Deps | Estado | Branch | Revisor | Nota |
 |---|---|---|---|---|---|---|---|
 | T00 Regras, skills e quadro | 0 | H | — | Entregue | — | — | — |
-| T01 Contratos 🔒 | 0 | H | T00 | Proposta | t01-contratos | C | — |
+| T01 Contratos 🔒 | 0 | H | T00 | Entregue | t01-contratos | G | notas/T01-contratos.md |
 | T10 Money e payloadHash | 1 | C | T01 | Proposta | t10-money | G | — |
 | T11 Wallet e WalletLedgerEntry | 1 | G | T01 | Proposta | t11-wallet | C | — |
 | T12 WagerTransaction 🔒 | 1 | C | T01 | Proposta | t12-wager-transaction | G | — |
@@ -46,7 +46,7 @@ o limite de 4 agentes ativos e 3 tarefas esperando revisão (EXECUCAO §6).
 
 | Marco | Fecha quando | Tag | Estado |
 |---|---|---|---|
-| M0 | T01 | `m0-contratos` | — |
+| M0 | T01 | `m0-contratos` | fechado em 28/10/2026 |
 | M1 | T10–T13, T16 | `m1-dominio` | — |
 | M2 | T14, T15 | `m2-schema` | — |
 | M3 | T20–T22 | `m3-persistencia` | — |
