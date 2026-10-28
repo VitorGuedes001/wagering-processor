@@ -1,5 +1,3 @@
-import { notImplemented } from '../not-implemented';
-
 /**
  * O que o use case fornece para montar um evento. O `eventId` vem daqui porque o
  * domínio não gera id (D44): quem emite dois eventos chama o `IdGenerator` duas vezes.
@@ -59,6 +57,15 @@ export abstract class IntegrationEvent<T> {
   }
 
   toJSON(): IntegrationEventJson<T> {
-    return notImplemented('T13');
+    return {
+      eventId: this.eventId,
+      eventType: this.eventType,
+      aggregateId: this.aggregateId,
+      correlationId: this.correlationId,
+      ...(this.causationId !== undefined ? { causationId: this.causationId } : {}),
+      occurredAt: this.occurredAt.toISOString(),
+      version: this.version,
+      data: this.data,
+    };
   }
 }

@@ -1,5 +1,4 @@
 import type { IntegrationEvent } from './events/integration-event';
-import { notImplemented } from './not-implemented';
 
 /** Backoff de publicação: `min(2^attempts × base, teto)`, sem limite de tentativas (D12). */
 export const OUTBOX_BACKOFF_BASE_MS = 1_000;
@@ -39,11 +38,29 @@ export class OutboxMessage {
    * `payload = event.toJSON()` e agenda para `occurredAt`.
    */
   static enqueue(event: IntegrationEvent<unknown>): OutboxMessage {
-    return notImplemented('T13', event);
+    return new OutboxMessage(
+      event.eventId,
+      event.aggregateId,
+      event.eventType,
+      event.toJSON() as unknown as Readonly<Record<string, unknown>>,
+      event.occurredAt,
+      0,
+      event.occurredAt,
+      undefined,
+    );
   }
 
   static rehydrate(state: OutboxMessageState): OutboxMessage {
-    return notImplemented('T13', state);
+    return new OutboxMessage(
+      state.id,
+      state.aggregateId,
+      state.eventType,
+      state.payload,
+      state.occurredAt,
+      state.attempts,
+      state.nextAttemptAt,
+      state.publishedAt,
+    );
   }
 
   get attempts(): number {
@@ -59,19 +76,25 @@ export class OutboxMessage {
   }
 
   isPending(): boolean {
-    return notImplemented('T13');
+    return this._publishedAt === undefined;
   }
 
   isDue(now: Date): boolean {
-    return notImplemented('T13', now);
+    return this.isPending() && this._nextAttemptAt.getTime() <= now.getTime();
   }
 
   markPublished(at: Date): void {
-    notImplemented('T13', at);
+    this._publishedAt = at;
   }
 
   /** `attempts++` e `nextAttemptAt = now + min(2^attempts × base, teto)`. O relógio é injetado, sem jitter. */
   scheduleRetry(now: Date): void {
-    notImplemented('T13', now);
+    this._attempts += 1;
+    const rawDelayMs =
+      this._attempts >= 6
+        ? OUTBOX_BACKOFF_MAX_MS
+        : 2 ** this._attempts * OUTBOX_BACKOFF_BASE_MS;
+    const delayMs = rawDelayMs > OUTBOX_BACKOFF_MAX_MS ? OUTBOX_BACKOFF_MAX_MS : rawDelayMs;
+    this._nextAttemptAt = new Date(now.getTime() + delayMs);
   }
 }

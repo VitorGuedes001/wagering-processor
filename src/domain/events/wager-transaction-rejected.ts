@@ -1,7 +1,12 @@
+import { InvalidTransactionStateError } from '../errors';
 import type { FailureCode } from '../failure-code';
 import type { MoneyProps } from '../money';
-import { notImplemented } from '../not-implemented';
-import type { SubmittableKind, WagerTransaction } from '../wager-transaction';
+import {
+  type SubmittableKind,
+  type WagerTransaction,
+  WagerTransactionKind,
+  WagerTransactionStatus,
+} from '../wager-transaction';
 import { type EventContext, IntegrationEvent, type IntegrationEventProps } from './integration-event';
 
 export interface WagerTransactionRejectedData {
@@ -25,6 +30,35 @@ export class WagerTransactionRejected extends IntegrationEvent<WagerTransactionR
   }
 
   static from(transaction: WagerTransaction, ctx: EventContext): WagerTransactionRejected {
-    return notImplemented('T13', transaction, ctx);
+    if (
+      transaction.status !== WagerTransactionStatus.Rejected ||
+      transaction.kind === WagerTransactionKind.Opening ||
+      transaction.providerId === undefined ||
+      transaction.externalTransactionId === undefined ||
+      transaction.failureCode === undefined ||
+      transaction.balanceAfter === undefined
+    ) {
+      throw new InvalidTransactionStateError(
+        `Cannot build WagerTransactionRejected from transaction in status ${transaction.status}`,
+      );
+    }
+
+    return new WagerTransactionRejected({
+      eventId: ctx.eventId,
+      aggregateId: transaction.id,
+      correlationId: ctx.correlationId,
+      ...(ctx.causationId !== undefined ? { causationId: ctx.causationId } : {}),
+      occurredAt: ctx.occurredAt,
+      data: {
+        transactionId: transaction.id,
+        providerId: transaction.providerId,
+        externalTransactionId: transaction.externalTransactionId,
+        walletId: transaction.walletId,
+        kind: transaction.kind,
+        money: transaction.money.toJSON(),
+        failureCode: transaction.failureCode,
+        balanceAfter: transaction.balanceAfter.toJSON(),
+      },
+    });
   }
 }

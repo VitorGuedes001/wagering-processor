@@ -1,5 +1,3 @@
-import { notImplemented } from './not-implemented';
-
 export interface ReceiveInboxProps {
   messageId: string;
   consumerName: string;
@@ -31,11 +29,17 @@ export class InboxMessage {
   ) {}
 
   static receive(props: ReceiveInboxProps): InboxMessage {
-    return notImplemented('T13', props);
+    return new InboxMessage(props.messageId, props.consumerName, props.payloadHash, props.at, undefined);
   }
 
   static rehydrate(state: InboxMessageState): InboxMessage {
-    return notImplemented('T13', state);
+    return new InboxMessage(
+      state.messageId,
+      state.consumerName,
+      state.payloadHash,
+      state.receivedAt,
+      state.processedAt,
+    );
   }
 
   get processedAt(): Date | undefined {
@@ -43,10 +47,10 @@ export class InboxMessage {
   }
 
   isProcessed(): boolean {
-    return notImplemented('T13');
+    return this._processedAt !== undefined;
   }
 
   markProcessed(at: Date): void {
-    notImplemented('T13', at);
+    this._processedAt = at;
   }
 }

@@ -1,5 +1,4 @@
 import type { MoneyProps } from '../money';
-import { notImplemented } from '../not-implemented';
 import type { Wallet } from '../wallet';
 import type { LedgerDirection, WalletLedgerEntry } from '../wallet-ledger-entry';
 import { type EventContext, IntegrationEvent, type IntegrationEventProps } from './integration-event';
@@ -25,6 +24,21 @@ export class WalletBalanceChanged extends IntegrationEvent<WalletBalanceChangedD
   }
 
   static from(wallet: Wallet, entry: WalletLedgerEntry, ctx: EventContext): WalletBalanceChanged {
-    return notImplemented('T13', wallet, entry, ctx);
+    return new WalletBalanceChanged({
+      eventId: ctx.eventId,
+      aggregateId: wallet.id,
+      correlationId: ctx.correlationId,
+      ...(ctx.causationId !== undefined ? { causationId: ctx.causationId } : {}),
+      occurredAt: ctx.occurredAt,
+      data: {
+        walletId: wallet.id,
+        transactionId: entry.transactionId,
+        direction: entry.direction,
+        money: entry.money.toJSON(),
+        balanceBefore: entry.balanceBefore.toJSON(),
+        balanceAfter: entry.balanceAfter.toJSON(),
+        walletVersion: entry.walletVersion,
+      },
+    });
   }
 }
