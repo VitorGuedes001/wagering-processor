@@ -1,6 +1,6 @@
+import { CurrencyMismatchError, InsufficientFundsError, InvalidMoneyError } from './errors';
 import type { Money } from './money';
-import { notImplemented } from './not-implemented';
-import type { WalletLedgerEntry } from './wallet-ledger-entry';
+import { LedgerDirection, WalletLedgerEntry } from './wallet-ledger-entry';
 
 /** Forma persistida, já com tipos de domínio (D45). */
 export interface WalletState {
@@ -48,12 +48,51 @@ export class Wallet {
 
   /** Cria com `version = 1` já com o saldo inicial (o `OPENING` não incrementa). */
   static open(props: OpenWalletProps): OpenedWallet {
-    return notImplemented('T11', props);
+    if (props.initialBalance.isNegative()) {
+      throw new InvalidMoneyError('Wallet initial balance cannot be negative');
+    }
+
+    const wallet = new Wallet(
+      props.id,
+      props.playerId,
+      props.initialBalance.currency,
+      props.initialBalance,
+      1,
+      props.at,
+      props.at,
+    );
+
+    if (props.initialBalance.isZero()) {
+      return { wallet };
+    }
+
+    const zeroMoney = props.initialBalance.subtract(props.initialBalance);
+    const openingEntry = WalletLedgerEntry.create({
+      id: props.openingEntryId,
+      walletId: props.id,
+      transactionId: props.openingTransactionId,
+      walletVersion: 1,
+      direction: LedgerDirection.Credit,
+      money: props.initialBalance,
+      balanceBefore: zeroMoney,
+      balanceAfter: props.initialBalance,
+      at: props.at,
+    });
+
+    return { wallet, openingEntry };
   }
 
   /** Reconstrói do banco sem revalidar (§6.0). */
   static rehydrate(state: WalletState): Wallet {
-    return notImplemented('T11', state);
+    return new Wallet(
+      state.id,
+      state.playerId,
+      state.currency,
+      state.balance,
+      state.version,
+      state.createdAt,
+      state.updatedAt,
+    );
   }
 
   get balance(): Money {
@@ -70,7 +109,8 @@ export class Wallet {
 
   /** A regra de negócio consulta antes de debitar (MODELAGEM 5, verificação 10). */
   canDebit(money: Money): boolean {
-    return notImplemented('T11', money);
+    this.assertSameCurrency(money);
+    return !this._balance.isLessThan(money);
   }
 
   /**
@@ -79,11 +119,72 @@ export class Wallet {
    * `CurrencyMismatchError`, ou erro se `money` não for positivo.
    */
   debit(money: Money, transactionId: string, entryId: string, at: Date): WalletLedgerEntry {
-    return notImplemented('T11', money, transactionId, entryId, at);
+    this.assertSameCurrency(money);
+    if (!money.isPositive()) {
+      throw new InvalidMoneyError('Debit money must be positive');
+    }
+    if (!this.canDebit(money)) {
+      throw new InsufficientFundsError('Insufficient funds for debit');
+    }
+
+    const before = this._balance;
+    const after = before.subtract(money);
+    const nextVersion = this._version + 1;
+
+    const entry = WalletLedgerEntry.create({
+      id: entryId,
+      walletId: this.id,
+      transactionId,
+      walletVersion: nextVersion,
+      direction: LedgerDirection.Debit,
+      money,
+      balanceBefore: before,
+      balanceAfter: after,
+      at,
+    });
+
+    this._balance = after;
+    this._version = nextVersion;
+    this._updatedAt = at;
+
+    return entry;
   }
 
   /** Credita, faz `version++` e devolve o lançamento. Mesmas guardas de moeda e valor. */
   credit(money: Money, transactionId: string, entryId: string, at: Date): WalletLedgerEntry {
-    return notImplemented('T11', money, transactionId, entryId, at);
+    this.assertSameCurrency(money);
+    if (!money.isPositive()) {
+      throw new InvalidMoneyError('Credit money must be positive');
+    }
+
+    const before = this._balance;
+    const after = before.add(money);
+    const nextVersion = this._version + 1;
+
+    const entry = WalletLedgerEntry.create({
+      id: entryId,
+      walletId: this.id,
+      transactionId,
+      walletVersion: nextVersion,
+      direction: LedgerDirection.Credit,
+      money,
+      balanceBefore: before,
+      balanceAfter: after,
+      at,
+    });
+
+    this._balance = after;
+    this._version = nextVersion;
+    this._updatedAt = at;
+
+    return entry;
+  }
+
+  private assertSameCurrency(money: Money): void {
+    if (money.currency !== this.currency) {
+      throw new CurrencyMismatchError(
+        `Wallet currency ${this.currency} does not match operation currency ${money.currency}`,
+      );
+    }
   }
 }

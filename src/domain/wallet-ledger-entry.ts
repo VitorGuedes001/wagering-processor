@@ -1,5 +1,5 @@
+import { LedgerArithmeticError } from './errors';
 import type { Money } from './money';
-import { notImplemented } from './not-implemented';
 
 export enum LedgerDirection {
   Debit = 'DEBIT',
@@ -56,16 +56,70 @@ export class WalletLedgerEntry {
    * for negativo (MODELAGEM 6).
    */
   static create(props: CreateLedgerEntryProps): WalletLedgerEntry {
-    return notImplemented('T11', props);
+    if (!props.money.isPositive()) {
+      throw new LedgerArithmeticError('Ledger entry money must be positive');
+    }
+    if (
+      props.money.currency !== props.balanceBefore.currency ||
+      props.money.currency !== props.balanceAfter.currency
+    ) {
+      throw new LedgerArithmeticError('Ledger entry currencies must match');
+    }
+    if (props.balanceBefore.isNegative() || props.balanceAfter.isNegative()) {
+      throw new LedgerArithmeticError('Ledger entry balances cannot be negative');
+    }
+    if (props.walletVersion < 1 || props.walletVersion % 1 !== 0) {
+      throw new LedgerArithmeticError('Ledger entry walletVersion must be an integer >= 1');
+    }
+
+    const expectedAfter =
+      props.direction === LedgerDirection.Credit
+        ? props.balanceBefore.add(props.money)
+        : props.balanceBefore.subtract(props.money);
+    if (!expectedAfter.equals(props.balanceAfter)) {
+      throw new LedgerArithmeticError('Ledger entry arithmetic does not balance');
+    }
+
+    return new WalletLedgerEntry(
+      props.id,
+      props.walletId,
+      props.transactionId,
+      props.walletVersion,
+      props.direction,
+      props.money,
+      props.balanceBefore,
+      props.balanceAfter,
+      props.at,
+    );
   }
 
   /** Reconstrói do banco sem revalidar (§6.0). */
   static rehydrate(state: LedgerEntryState): WalletLedgerEntry {
-    return notImplemented('T11', state);
+    return new WalletLedgerEntry(
+      state.id,
+      state.walletId,
+      state.transactionId,
+      state.walletVersion,
+      state.direction,
+      state.money,
+      state.balanceBefore,
+      state.balanceAfter,
+      state.createdAt,
+    );
   }
 
   /** `balanceBefore ± money === balanceAfter`. */
   isBalanced(): boolean {
-    return notImplemented('T11');
+    if (
+      this.money.currency !== this.balanceBefore.currency ||
+      this.money.currency !== this.balanceAfter.currency
+    ) {
+      return false;
+    }
+    const expectedAfter =
+      this.direction === LedgerDirection.Credit
+        ? this.balanceBefore.add(this.money)
+        : this.balanceBefore.subtract(this.money);
+    return expectedAfter.equals(this.balanceAfter);
   }
 }
