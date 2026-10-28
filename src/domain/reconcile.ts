@@ -1,7 +1,6 @@
-import type { Money } from './money';
-import { notImplemented } from './not-implemented';
+import { Money } from './money';
 import type { Wallet } from './wallet';
-import type { WalletLedgerEntry } from './wallet-ledger-entry';
+import { LedgerDirection, type WalletLedgerEntry } from './wallet-ledger-entry';
 
 export interface ReconciliationResult {
   walletId: string;
@@ -19,7 +18,40 @@ export interface ReconciliationResult {
 /**
  * Recalcula o saldo pelo ledger e confere a cadeia (MODELAGEM 11). Só sinaliza:
  * divergência nunca é corrigida aqui. `entries` vem em ordem de `walletVersion`.
+ *
+ * Atenção: wallet aberta com saldo zero não gera `OPENING` (MODELAGEM 3), então o
+ * primeiro lançamento tem `walletVersion = 2` e `balanceBefore = 0.00`. A verificação
+ * confere a cadeia de saldos (partindo de zero e com cada lançamento internamente
+ * balanceado), e não a contiguidade de `walletVersion`.
  */
 export function reconcile(wallet: Wallet, entries: readonly WalletLedgerEntry[]): ReconciliationResult {
-  return notImplemented('T16', wallet, entries);
+  const zero = Money.zero(wallet.currency);
+  let calculatedBalance = zero;
+  let expectedBefore = zero;
+  let chainIntact = true;
+
+  for (const entry of entries) {
+    if (!entry.balanceBefore.equals(expectedBefore) || !entry.isBalanced()) {
+      chainIntact = false;
+    }
+    expectedBefore = entry.balanceAfter;
+    calculatedBalance =
+      entry.direction === LedgerDirection.Credit
+        ? calculatedBalance.add(entry.money)
+        : calculatedBalance.subtract(entry.money);
+  }
+
+  const storedBalance = wallet.balance;
+  const difference = storedBalance.subtract(calculatedBalance);
+  const consistent = chainIntact && storedBalance.equals(calculatedBalance);
+
+  return {
+    walletId: wallet.id,
+    storedBalance,
+    calculatedBalance,
+    difference,
+    consistent,
+    chainIntact,
+    checkedEntries: entries.length,
+  };
 }
