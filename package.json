@@ -1,0 +1,38 @@
+{
+  "name": "wagering-processor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down -v",
+    "db:migrate": "bunx --bun mikro-orm migration:up",
+    "db:rollback": "bunx --bun mikro-orm migration:down",
+    "smoke": "bun run scripts/smoke.ts",
+    "start:dev": "bun --watch src/main.ts",
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test"
+  },
+  "mikro-orm": {
+    "useTsNode": false,
+    "configPaths": ["./src/mikro-orm.config.ts"]
+  },
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.1159.0",
+    "@mikro-orm/core": "^7.2.5",
+    "@mikro-orm/decorators": "^7.2.5",
+    "@mikro-orm/migrations": "^7.2.5",
+    "@mikro-orm/nestjs": "^7.1.0",
+    "@mikro-orm/postgresql": "^7.2.5",
+    "@nestjs/common": "^12.3.2",
+    "@nestjs/core": "^12.3.2",
+    "@nestjs/platform-express": "^12.3.2",
+    "decimal.js": "^10.6.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@mikro-orm/cli": "^7.2.5",
+    "bun-types": "^1.4.4",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,3 @@
+* text=auto
+# Scripts executados dentro de containers Linux: CRLF quebra com "bad interpreter".
+*.sh text eol=lf
