@@ -1,14 +1,32 @@
 # T14 — Migrations e triggers 🔒
 
-> Estado: Abordagem · Raia: C · Revisor: G · Branch: `t14-migrations`
+> Estado: Testada · Raia: C · Revisor: G · Branch: `claude/t14-migrations-0aca3f`
 
 ## O que muda
 
-Uma frase por arquivo tocado.
+- `migrations/Migration20261028000001_wallet_and_transactions.ts`: cria
+  `wallet` e `wager_transaction` com todas as constraints e índices da SCHEMA
+  2.1/2.2 e os triggers `wallet_version_rule`, `wallet_no_delete` e
+  `wager_tx_guard`.
+- `migrations/Migration20261028000002_ledger.ts`: cria `wallet_ledger_entry`
+  (SCHEMA 2.3) e os triggers `ledger_immutable`, `ledger_no_truncate`,
+  `ledger_chain`, `wallet_ledger_match` e `ledger_wallet_match`, este último o
+  8º trigger aprovado na decisão 3.
+- `migrations/Migration20261028000003_inbox_outbox.ts`: cria `inbox_message`,
+  `outbox_message` e `outbox_due_ix` (SCHEMA 2.4/2.5).
+- `docs/notas/T14-migrations.md`: esta nota.
 
 ## Por quê
 
-Regras atendidas, com referência aos docs (ex.: MODELAGEM 4.3; D2).
+- Restrição 9 (CHALLENGE §5): unicidade (os 7 `_uq` de `UniqueConstraint`),
+  imutabilidade (`ledger_*`, `wager_tx_guard`, `wallet_no_delete`) e
+  não-negatividade (`*_non_negative_ck`) ficam no schema.
+- D16/D17 (SCHEMA §3): saldo, `version` e ledger andam juntos: nenhuma mudança
+  de saldo sem lançamento, nenhum lançamento sem bater com o saldo, cadeia
+  contínua.
+- MODELAGEM 4: terminal não transiciona; `PENDING_REFERENCE` só vai para ela
+  mesma ou terminal.
+- SCHEMA §8: três migrations, cada uma com `down` que é o inverso exato do `up`.
 
 ## Abordagem
 
@@ -189,11 +207,23 @@ pelo menos uma violação de cada trigger e de cada `_uq`. Registro tudo na nota
   - *`RAISE` com o `P0001` padrão*: funciona, mas sem `CONSTRAINT` o teste só
     tem a mensagem para saber qual trigger disparou.
 
-**Aprovação do humano:** pendente
+**Aprovação do humano:** aprovada na conversa (2026-10-28), "Aprovar tudo":
+abordagem e as três propostas das decisões pendentes (23000 + `CONSTRAINT`,
+terminal congela a linha, 8º trigger `ledger_wallet_match` checando o último
+lançamento).
 
 ## Ordem de leitura do diff
 
-1. `arquivo` — o que olhar nele
+1. `migrations/Migration20261028000002_ledger.ts`: o miolo. Olhe o `FOR
+   UPDATE` do `ledger_chain_fn`, o `wallet_ledger_assert`, que relê a wallet e
+   compara com o **último** lançamento, e a isenção `version = 1 AND balance =
+   0`. Os dois constraint triggers são `DEFERRABLE INITIALLY DEFERRED`.
+2. `migrations/Migration20261028000001_wallet_and_transactions.ts`: confira os
+   nomes contra a SCHEMA 2.1/2.2 e, no `wager_tx_guard_fn`, a lista de colunas
+   imutáveis e o congelamento da linha terminal.
+3. `migrations/Migration20261028000003_inbox_outbox.ts`: DDL direta da SCHEMA.
+4. A ordem dos `down`: o trigger em `wallet` sai antes da tabela do ledger, e
+   as funções saem depois das tabelas.
 
 ## Como verificar
 
@@ -201,7 +231,69 @@ pelo menos uma violação de cada trigger e de cada `_uq`. Registro tudo na nota
 bun run tarefa:gate
 ```
 
+Hoje o gate só cobre typecheck e arquitetura: o I-01 e o I-02 chegam com a
+T15. Para repetir a validação manual (banco descartável, nunca o `wagering`):
+
+```bash
+docker exec wagering-postgres psql -U wagering -d postgres -c "CREATE DATABASE t14_scratch"
+DB_NAME=t14_scratch bunx --bun mikro-orm migration:up
+DB_NAME=t14_scratch bunx --bun mikro-orm migration:down --to 0
+DB_NAME=t14_scratch bunx --bun mikro-orm migration:up
+docker exec wagering-postgres psql -U wagering -d postgres -c "DROP DATABASE t14_scratch"
+```
+
+O container é chamado pelo nome (`wagering-postgres`): `docker compose exec`
+de dentro de um worktree procura outro projeto do Compose (o nome da pasta) e
+não acha o serviço.
+
+### O que testei à mão (2026-10-28, banco `t14_scratch`, já apagado)
+
+- **I-01:** `up → down --to 0 → up` em banco vazio. Depois do `down`, o schema
+  `public` só tinha `mikro_orm_migrations` (nenhuma tabela, índice ou função
+  sobrando). Também `down → up` com dados no banco.
+- **Caminhos válidos que passam:** wallet com saldo + `OPENING` + lançamento v1;
+  `BET` com o lançamento **antes** do update da wallet (ordem inversa, aceita
+  pelo deferred); wallet nova com saldo zero e sem lançamento;
+  `PENDING_REFERENCE → PENDING_REFERENCE` (retry); wallet atualizada duas vezes
+  na mesma transação com um lançamento só no fim.
+- **Violações por SQL cru.** Todas deram o erro esperado, com `CONSTRAINT
+  NAME` certo:
+
+  | Caso | Erro |
+  |---|---|
+  | saldo negativo | 23514 `wallet_balance_non_negative_ck` |
+  | wallet duplicada | 23505 `wallet_player_currency_uq` |
+  | `version` sem mudar saldo / saldo sem `version + 1` / `currency` muda | 23000 `wallet_version_rule` |
+  | saldo sem lançamento, no `COMMIT` | 23000 `wallet_ledger_match` |
+  | `DELETE` de wallet | 23000 `wallet_no_delete` |
+  | `BET` com 0 / hash fora do formato | 23514 `wager_tx_amount_ck` / `wager_tx_payload_hash_format_ck` |
+  | key repetida / id externo repetido / 2ª `OPENING` / 2ª reversão `PROCESSED` | 23505 com o `_uq` de cada |
+  | terminal muda `status` / muda `balance_after` | 23000 `wager_tx_guard` |
+  | `PENDING_REFERENCE → PENDING` / `amount` muda / `DELETE` | 23000 `wager_tx_guard` |
+  | aritmética errada | 23514 `ledger_arithmetic_ck` |
+  | moeda ≠ wallet / wallet ≠ transação | 23503 `ledger_wallet_fk` / `ledger_transaction_fk` |
+  | dois lançamentos por transação | 23505 `ledger_transaction_uq` |
+  | `wallet_version` repetida (com `ledger_chain` desligado na transação, senão ele pega antes) | 23505 `ledger_wallet_version_uq` |
+  | versão não maior / cadeia quebrada / primeiro lançamento fora de 0 | 23000 `ledger_chain` |
+  | lançamento sem mexer na wallet, no `COMMIT` | 23000 `ledger_wallet_match` |
+  | `UPDATE` / `DELETE` de lançamento | 23000 `ledger_immutable` |
+  | `TRUNCATE wallet_ledger_entry` / `TRUNCATE wallet CASCADE` | 23000 `ledger_no_truncate` |
+
+- **Corrida sem lock no `ledger_chain`:** duas conexões. A insere v5 (110→115)
+  e segura a transação; B insere v6 partindo de 110. B esperou o commit de A e
+  caiu em 23000 `ledger_chain` ("balance_before 110.00 não bate com o último
+  balance_after 115.00").
+
+**Para a T15 (I-02):** erro de trigger é SQLSTATE `23000` com o nome do
+trigger no campo `constraint` do erro. Os dois constraint triggers só falham
+no `COMMIT`, a não ser que o teste rode `SET CONSTRAINTS ... IMMEDIATE`. O reset
+entre testes precisa de `session_replication_role = replica` ou de um banco
+recriado: `TRUNCATE` do ledger é bloqueado, inclusive via `CASCADE`.
+
 ## Decisões pendentes
+
+Nenhuma aberta. As três abaixo foram aprovadas pelo humano em 2026-10-28 e
+estão implementadas como propostas.
 
 1. **SQLSTATE dos triggers.** A SCHEMA não fixa. Proposta: `23000`
    (`integrity_constraint_violation`) com `CONSTRAINT = '<nome do trigger>'`.
@@ -238,7 +330,15 @@ Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
 - SCHEMA §8 "Junto": apagar `smoke_balance` já foi feito na B0; criar
   `wagering-events.fifo` já está no `init-queues.sh`. Limpar o histórico de
   migrations do banco `wagering` (`bun run infra:down`) é do humano: é proibido
-  para agentes e eu não toco no banco `wagering`.
+  para agentes e eu não toco no banco `wagering`. Não conferi o banco
+  `wagering`: se ele ainda tiver a migration de smoke registrada, o
+  `db:migrate` nele vai reclamar até essa limpeza.
+- Duas mudanças de saldo na mesma transação com um lançamento só deixam um
+  buraco de `version` no ledger (v2 → v4, como no teste acima). A cadeia de
+  saldo continua contínua e o cursor funciona. O caminho normal faz uma
+  mudança por transação, então só registrei.
+- `docs/SCHEMA.md` §3 ainda lista 7 triggers. Atualizar o doc com o
+  `ledger_wallet_match` está fora dos arquivos permitidos: fica para o humano.
 
 ## Revisão cruzada
 
