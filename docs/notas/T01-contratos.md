@@ -1,6 +1,6 @@
 # T01 — Contratos 🔒
 
-> Estado: Testada · Raia: H (em par com C) · Revisor: G (ver "Revisão cruzada") · Branch: `t01-contratos`
+> Estado: Revisada · Raia: H (em par com C) · Revisor: G (ver "Revisão cruzada") · Branch: `t01-contratos`
 
 ## O que muda
 
@@ -188,6 +188,9 @@ listados para a revisão não deixá-los passar em silêncio.
    `CreateWallet` precisa deles), com os formatos de CHALLENGE §9.
 9. Datas dentro de `data` dos eventos são string ISO, como `occurredAt` no
    envelope (JSON estável, §11).
+10. `UniqueViolationError` com `UniqueConstraint` em `ports.ts`: a infraestrutura
+    traduz `23505` sem a aplicação importar o driver (SCHEMA 5, ARQUITETURA 2).
+    Encontrado depois da revisão cruzada (A1).
 
 ## Ordem de leitura do diff
 
@@ -231,9 +234,26 @@ MikroORM, AWS SDK ou zod em `src/domain` ou `src/application`, e nenhum
 
 ## Revisão cruzada
 
-Preenchido pelo agente da outra ferramenta.
+Revisado pelo Antigravity (Gemini) contra `docs/CHALLENGE.md` (§5, §6, §9, §11), `docs/MODELAGEM.md` (§1–§11, D1–D14, D42–D47), `docs/SCHEMA.md` (§2, §4, §5, D15–D22), `docs/ARQUITETURA.md` (§1–§6, §8, D23–D32, D48–D50) e `docs/EXECUCAO.md` (§6).
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
+| — | — | — | Nenhum achado (0 bloqueantes, 0 importantes, 0 menores). | — |
+| A1 | importante | `src/application/ports.ts` | *Achado do autor, depois da revisão.* Faltava o contrato para traduzir `23505` sem vazar o erro do driver. A SCHEMA 5 exige reagir pela constraint (refazer, `WALLET_ALREADY_EXISTS` ou bug), e sem tipo comum T20 e T30 inventariariam formatos diferentes | Adicionados `UniqueConstraint` (nomes da SCHEMA 2) e `UniqueViolationError`. Ajuste derivado 10. Gate verde |
 
-Veredito: pendente
+O que foi verificado:
+- **Gate (`bun run tarefa:gate` no worktree `wp-T01`):** `typecheck` limpo (`tsc --noEmit`), `skills` sincronizadas e teste de arquitetura passando.
+- **Escopo:** os 22 arquivos alterados correspondem exatamente aos contratos de `src/domain/**`, `src/application/{contracts,ports}.ts`, `docs/notas/T01-contratos.md` e ao registro das decisões aprovadas D42–D50 em `docs/MODELAGEM.md` e `docs/ARQUITETURA.md`. Nenhum arquivo proibido (`app.module.ts`, `mikro-orm.config.ts`, `package.json`, `bun.lock`) foi tocado.
+- **Restrição 5.1 (dinheiro):** nenhum `number`, `parseFloat`, `Number(`, `toFixed` ou `Math.` em caminho monetário. `Money` encapsula `cents: bigint` privado e expõe `MoneyProps` (`amount: string`, `currency: string`) nas bordas, eventos e contratos de aplicação.
+- **Camadas (ARQUITETURA §2):** `src/domain/**` não importa nada externo (apenas imports relativos entre módulos de domínio); `src/application/**` importa apenas tipos de `src/domain/**`. Sem Nest, MikroORM, AWS SDK ou zod.
+- **Fidelidade aos docs e decisões:**
+  - `FailureCode` contém exatamente os 11 códigos de MODELAGEM 10.1; `errors.ts` contém `DomainError` e as 6 exceções de MODELAGEM 10.4; `RequestErrorCode` cobre MODELAGEM 10.2 e ARQUITETURA 6.2 (D50).
+  - `Wallet` e `WalletLedgerEntry` refletem `walletVersion` (D16), imutabilidade estrutural (§6.4) e retorno obrigatório do lançamento em `debit`/`credit` (MODELAGEM 3).
+  - `WagerTransaction` reflete `SubmittableKind`, `BackoffPolicy` (D43), factory `opening` (D42), campos opcionais de provedor para `OPENING` (SCHEMA 2.2) e transições com snapshot `balanceAfter` (D10, D46).
+  - Eventos (`IntegrationEvent` e as 4 subclasses), `InboxMessage`, `OutboxMessage` (com constantes de backoff D12 e `nextAttemptAt` `NOT NULL` do SCHEMA 2.5), `decideWager`, `reconcile`, `payloadHash`, `contracts.ts` e `ports.ts` (D48–D50) batem linha a linha com as especificações.
+
+Veredito: aprovado
+
+> Nota do autor: o A1 entrou **depois** do veredito, e o revisor não o viu. É
+> aditivo (1 tipo e 1 classe em `ports.ts`, sem mudar nada existente). Fica para
+> a validação humana conferir, em vez de abrir outra rodada de revisão.
