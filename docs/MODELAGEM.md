@@ -27,7 +27,7 @@ o `ARCHITECTURE.md` com a justificativa.
 | D9 | `Money` nunca arredonda: mais de 2 casas é rejeitado | §6.1. Não há multiplicação nem divisão no domínio, então nada produz casa extra |
 | D10 | A transação guarda o **saldo resultante** como snapshot | §7.7 exige o saldo daquele momento no replay. `LOSS` e `REJECTED` não têm lançamento de onde tirar |
 | D11 | `PENDING_REFERENCE`: 10 tentativas, backoff exponencial de 1 s até no máximo 5 min (~13,5 min no total) | Fora de ordem aqui é reordenação de transporte, resolvida em segundos. Configurável por env |
-| D12 | O outbox nunca desiste: backoff de 1 s até no máximo 60 s, sem limite de tentativas. Lag vira métrica | §11: "sem perder". Desistir seria perder evento confirmado |
+| D12 | O outbox nunca desiste: backoff exponencial com a primeira retentativa em 2 s e teto de 60 s (fórmula em §7), sem limite de tentativas. Lag vira métrica | §11: "sem perder". Desistir seria perder evento confirmado |
 | D13 | `WALLET_NOT_FOUND` não persiste transação | Sem wallet não há FK válida. Reenviar depois de criar a wallet processa normalmente |
 | D14 | `FAILED` não emite evento | Nenhum dos eventos mínimos cobre. Visível por consulta e métrica |
 
@@ -277,8 +277,9 @@ lost update e ordenar o extrato ([SCHEMA.md](SCHEMA.md), D16).
 processamento terminou, o desfecho está na transação. `payloadHash` divergente
 no mesmo `messageId` segue D7.
 
-**OutboxMessage:** `enqueue(event, at)` copia `eventType`, `aggregateId` e
-`occurredAt` do evento e grava `payload = event.toJSON()`. Já
+**OutboxMessage:** `enqueue(event)` copia `eventId`, `eventType`, `aggregateId`
+e `occurredAt` do evento, grava `payload = event.toJSON()` e agenda a primeira
+tentativa para `occurredAt`: o instante vem do evento, sem parâmetro à parte. Já
 `scheduleRetry(now)` faz `attempts++` e calcula
 `next = now + min(2^attempts s, 60 s)`, sem limite (D12). O relógio é injetado,
 sem jitter no domínio, para os testes serem determinísticos.
