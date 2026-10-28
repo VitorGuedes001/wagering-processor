@@ -1,7 +1,7 @@
+import { InvalidTransactionStateError, InvalidWagerRequestError } from './errors';
 import type { FailureCode } from './failure-code';
 import type { Money } from './money';
-import { notImplemented } from './not-implemented';
-import type { LedgerDirection } from './wallet-ledger-entry';
+import { LedgerDirection } from './wallet-ledger-entry';
 
 export enum WagerTransactionKind {
   /** Interno: crédito de abertura da wallet. Nunca submetido por API ou fila. */
@@ -128,17 +128,108 @@ export class WagerTransaction {
    * para a própria `externalTransactionId`, valor fora da regra do kind.
    */
   static create(props: CreateWagerTransactionProps): WagerTransaction {
-    return notImplemented('T12', props);
+    // Ordem fixa: kind, referência, valor. O tipo já exclui `OPENING`, mas o kind vem de fora.
+    if (!SUBMITTABLE_KINDS.has(props.kind)) {
+      throw new InvalidWagerRequestError(`kind não aceito de fora: ${String(props.kind)}`);
+    }
+    const reference = props.referenceExternalTransactionId;
+    if (props.kind === WagerTransactionKind.Bet && reference !== undefined) {
+      throw new InvalidWagerRequestError('BET não aceita referência');
+    }
+    if (REFERENCE_REQUIRED_KINDS.has(props.kind) && reference === undefined) {
+      throw new InvalidWagerRequestError(`${props.kind} exige referência`);
+    }
+    if (reference !== undefined && reference === props.externalTransactionId) {
+      throw new InvalidWagerRequestError('a referência aponta para a própria transação');
+    }
+    // `LOSS` aceita zero (D3); os demais exigem > 0. `Money.from` já barrou negativo.
+    const amountOk =
+      props.kind === WagerTransactionKind.Loss ? !props.money.isNegative() : props.money.isPositive();
+    if (!amountOk) {
+      throw new InvalidWagerRequestError(`valor fora da regra de ${props.kind}: ${props.money.toString()}`);
+    }
+
+    return new WagerTransaction(
+      props.id,
+      props.providerId,
+      props.externalTransactionId,
+      props.idempotencyKey,
+      props.payloadHash,
+      props.walletId,
+      props.playerId,
+      props.roundId,
+      props.gameId,
+      props.kind,
+      props.money,
+      reference,
+      props.at,
+      WagerTransactionStatus.Pending,
+      props.at,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      0,
+      undefined,
+    );
   }
 
   /** `OPENING` da wallet: nasce `PROCESSED`, com `balanceAfter = money` e sem campos de provedor (D42). */
   static opening(props: OpeningTransactionProps): WagerTransaction {
-    return notImplemented('T12', props);
+    // MODELAGEM 4.2: `OPENING > 0`. Saldo inicial zero não gera abertura (MODELAGEM 3).
+    if (!props.money.isPositive()) {
+      throw new InvalidWagerRequestError(`valor fora da regra de OPENING: ${props.money.toString()}`);
+    }
+    return new WagerTransaction(
+      props.id,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      props.walletId,
+      props.playerId,
+      undefined,
+      undefined,
+      WagerTransactionKind.Opening,
+      props.money,
+      undefined,
+      props.at,
+      WagerTransactionStatus.Processed,
+      props.at,
+      undefined,
+      undefined,
+      props.at,
+      props.money,
+      0,
+      undefined,
+    );
   }
 
   /** Reconstrói do banco sem revalidar transições (§6.0). */
   static rehydrate(state: WagerTransactionState): WagerTransaction {
-    return notImplemented('T12', state);
+    return new WagerTransaction(
+      state.id,
+      state.providerId,
+      state.externalTransactionId,
+      state.idempotencyKey,
+      state.payloadHash,
+      state.walletId,
+      state.playerId,
+      state.roundId,
+      state.gameId,
+      state.kind,
+      state.money,
+      state.referenceExternalTransactionId,
+      state.createdAt,
+      state.status,
+      state.updatedAt,
+      state.referenceTransactionId,
+      state.failureCode,
+      state.processedAt,
+      state.balanceAfter,
+      state.referenceAttempts,
+      state.nextReferenceAttemptAt,
+    );
   }
 
   get status(): WagerTransactionStatus {
@@ -176,50 +267,69 @@ export class WagerTransaction {
   // ---- transições (D46). Origem permitida: PENDING ou PENDING_REFERENCE, salvo indicação.
 
   markProcessed(referenceTransactionId: string | undefined, balanceAfter: Money, at: Date): void {
-    notImplemented('T12', referenceTransactionId, balanceAfter, at);
+    this.assertStatus('markProcessed', OPEN_STATUSES);
+    this._status = WagerTransactionStatus.Processed;
+    this._referenceTransactionId = referenceTransactionId;
+    this._balanceAfter = balanceAfter;
+    this._processedAt = at;
+    this.close(at);
   }
 
   reject(code: FailureCode, balanceAfter: Money, at: Date): void {
-    notImplemented('T12', code, balanceAfter, at);
+    this.assertStatus('reject', OPEN_STATUSES);
+    this._status = WagerTransactionStatus.Rejected;
+    this._failureCode = code;
+    this._balanceAfter = balanceAfter;
+    this.close(at);
   }
 
   /** Sem snapshot: a transação financeira não aconteceu. */
   fail(code: FailureCode, at: Date): void {
-    notImplemented('T12', code, at);
+    this.assertStatus('fail', OPEN_STATUSES);
+    this._status = WagerTransactionStatus.Failed;
+    this._failureCode = code;
+    this.close(at);
   }
 
   /** Só a partir de `PENDING`. `attempts = 0` e agenda a primeira tentativa. */
   markPendingReference(now: Date, policy: BackoffPolicy): void {
-    notImplemented('T12', now, policy);
+    this.assertStatus('markPendingReference', [WagerTransactionStatus.Pending]);
+    this._status = WagerTransactionStatus.PendingReference;
+    this._referenceAttempts = 0;
+    this._nextReferenceAttemptAt = nextAttemptAt(now, 0, policy);
+    this._updatedAt = now;
   }
 
   /** Só em `PENDING_REFERENCE`. `attempts++` e reagenda com backoff. Não muda status. */
   scheduleReferenceRetry(now: Date, policy: BackoffPolicy): void {
-    notImplemented('T12', now, policy);
+    this.assertStatus('scheduleReferenceRetry', [WagerTransactionStatus.PendingReference]);
+    this._referenceAttempts += 1;
+    this._nextReferenceAttemptAt = nextAttemptAt(now, this._referenceAttempts, policy);
+    this._updatedAt = now;
   }
 
   // ---- consultas de domínio
 
   referenceAttemptsExhausted(policy: BackoffPolicy): boolean {
-    return notImplemented('T12', policy);
+    return this._referenceAttempts >= policy.maxAttempts;
   }
 
   isTerminal(): boolean {
-    return notImplemented('T12');
+    return TERMINAL_STATUSES.has(this._status);
   }
 
   /** `false` para `LOSS`: a aposta já foi debitada no `BET`. */
   affectsBalance(): boolean {
-    return notImplemented('T12');
+    return this.kind !== WagerTransactionKind.Loss;
   }
 
   /** `true` para `REFUND` e `ROLLBACK`. */
   requiresReference(): boolean {
-    return notImplemented('T12');
+    return REFERENCE_REQUIRED_KINDS.has(this.kind);
   }
 
   matchesPayload(payloadHash: string): boolean {
-    return notImplemented('T12', payloadHash);
+    return this.payloadHash !== undefined && this.payloadHash === payloadHash;
   }
 
   /**
@@ -227,6 +337,79 @@ export class WagerTransaction {
    * por isso a recebe. Lança para `LOSS`, que não tem direção.
    */
   ledgerDirectionFor(reference?: WagerTransaction): LedgerDirection {
-    return notImplemented('T12', reference);
+    switch (this.kind) {
+      case WagerTransactionKind.Opening:
+      case WagerTransactionKind.Win:
+      case WagerTransactionKind.Refund:
+        return LedgerDirection.Credit;
+      case WagerTransactionKind.Bet:
+        return LedgerDirection.Debit;
+      case WagerTransactionKind.Loss:
+        throw new InvalidTransactionStateError('LOSS não move saldo: não tem direção no ledger');
+      case WagerTransactionKind.Rollback: {
+        // `decideWager` rejeita referência de outro kind antes (REFERENCE_KIND_NOT_ALLOWED).
+        if (reference === undefined || !ROLLBACKABLE_KINDS.has(reference.kind)) {
+          throw new InvalidTransactionStateError(
+            `ROLLBACK sem referência reversível: ${reference?.kind ?? 'ausente'}`,
+          );
+        }
+        return reference.ledgerDirectionFor() === LedgerDirection.Debit
+          ? LedgerDirection.Credit
+          : LedgerDirection.Debit;
+      }
+    }
   }
+
+  /** Origem fora da lista: terminal ou não permitida (MODELAGEM 4.3). É bug, nunca `failureCode`. */
+  private assertStatus(method: string, allowed: readonly WagerTransactionStatus[]): void {
+    if (!allowed.includes(this._status)) {
+      throw new InvalidTransactionStateError(`${method} não é permitido a partir de ${this._status} (${this.id})`);
+    }
+  }
+
+  /** Desfecho terminal: não há mais tentativa de referência a agendar. */
+  private close(at: Date): void {
+    this._nextReferenceAttemptAt = undefined;
+    this._updatedAt = at;
+  }
+}
+
+const SUBMITTABLE_KINDS: ReadonlySet<WagerTransactionKind> = new Set([
+  WagerTransactionKind.Bet,
+  WagerTransactionKind.Win,
+  WagerTransactionKind.Loss,
+  WagerTransactionKind.Refund,
+  WagerTransactionKind.Rollback,
+]);
+
+const REFERENCE_REQUIRED_KINDS: ReadonlySet<WagerTransactionKind> = new Set([
+  WagerTransactionKind.Refund,
+  WagerTransactionKind.Rollback,
+]);
+
+/** Kinds que um `ROLLBACK` pode referenciar (MODELAGEM 4.2). */
+const ROLLBACKABLE_KINDS: ReadonlySet<WagerTransactionKind> = new Set([
+  WagerTransactionKind.Bet,
+  WagerTransactionKind.Win,
+  WagerTransactionKind.Refund,
+]);
+
+const OPEN_STATUSES: readonly WagerTransactionStatus[] = [
+  WagerTransactionStatus.Pending,
+  WagerTransactionStatus.PendingReference,
+];
+
+const TERMINAL_STATUSES: ReadonlySet<WagerTransactionStatus> = new Set([
+  WagerTransactionStatus.Processed,
+  WagerTransactionStatus.Rejected,
+  WagerTransactionStatus.Failed,
+]);
+
+/**
+ * `now + min(baseMs × 2^attempts, maxMs)` (D11). Não é caminho de dinheiro, então
+ * `number` vale. `2 ** attempts` vira `Infinity` em expoente alto e o `min` devolve `maxMs`.
+ */
+function nextAttemptAt(now: Date, attempts: number, policy: BackoffPolicy): Date {
+  const delayMs = Math.min(policy.baseMs * 2 ** attempts, policy.maxMs);
+  return new Date(now.getTime() + delayMs);
 }
