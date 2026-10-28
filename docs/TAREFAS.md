@@ -20,7 +20,7 @@ a do worktree.
 | T10 Money e payloadHash | 1 | C | T01 | Entregue | t10-money | G | notas/T10-money.md |
 | T11 Wallet e WalletLedgerEntry | 1 | G | T01 | Entregue | t11-wallet | C | notas/T11-wallet.md |
 | T12 WagerTransaction 🔒 | 1 | C | T01 | Entregue | t12-wager-transaction | G | notas/T12-wager-transaction.md |
-| T13 Inbox, Outbox e eventos | 1 | G | T01 | Testada | t13-inbox-outbox | C | — |
+| T13 Inbox, Outbox e eventos | 1 | G→C | T01 | Implementada | t13-inbox-outbox | G | — |
 | T14 Migrations e triggers 🔒 | 1 | C | T01 | Entregue | t14-migrations | G | notas/T14-migrations.md |
 | T15 Infra de teste e testes de schema | 1 | G | T01 | Implementada | t15-test-infra | C | — |
 | T16 decideWager e reconcile 🔒 | 1 | G | T10, T11, T12 | Abordagem | t16-decide-wager | C | — |
