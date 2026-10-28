@@ -1,14 +1,27 @@
 # T12 — WagerTransaction 🔒
 
-> Estado: Implementada · Raia: C · Revisor: G · Branch: `t12-wager-transaction`
+> Estado: Implementada (gate vermelho só porque a T10 não está na `main`; ver
+> "Como verificar") · Raia: C · Revisor: G · Branch: `t12-wager-transaction`
 
 ## O que muda
 
-Uma frase por arquivo tocado.
+- `src/domain/wager-transaction.ts`: corpos de `create`, `opening`, `rehydrate`,
+  das cinco transições e das consultas, no contrato do M0, sem mudar assinatura
+  pública. Constantes de kind/status e `nextAttemptAt` ficam privadas ao módulo.
+- `test/unit/wager-transaction.test.ts` (novo): 88 testes de unidade, cobrindo a
+  linha `WagerTransaction` de MODELAGEM 12.
+- Esta nota.
 
 ## Por quê
 
-Regras atendidas, com referência aos docs (ex.: MODELAGEM 4.3; D2).
+- MODELAGEM 4.2 e D3: `create` valida a forma por kind e lança
+  `InvalidWagerRequestError`, que vira `INVALID_PAYLOAD` na borda (10.4).
+- MODELAGEM 4.3 e D46: transições só a partir das origens permitidas. Origem
+  terminal lança `InvalidTransactionStateError`, que é bug e nunca vira `failureCode`.
+- D10: `markProcessed` e `reject` gravam o snapshot `balanceAfter`; `fail`, não.
+- D11 e D43: backoff `min(baseMs × 2^attempts, maxMs)`, com a política recebida
+  por parâmetro (o domínio não lê env).
+- D42: `opening` nasce `PROCESSED`, com snapshot e sem campos de provedor.
 
 ## Abordagem
 
@@ -138,13 +151,32 @@ pendentes 1, 2 e 3. A 4 fica registrada para a T16.
 
 ## Ordem de leitura do diff
 
-1. `arquivo` — o que olhar nele
+1. `src/domain/wager-transaction.ts`, `create`: a ordem das guardas (kind,
+   referência, valor) e a regra de valor de `LOSS` (D3).
+2. Mesmo arquivo, transições: `assertStatus` com as origens de cada método e
+   `close`, que limpa `nextReferenceAttemptAt` no desfecho.
+3. Mesmo arquivo, `ledgerDirectionFor`: a inversão do `ROLLBACK` e os dois casos
+   que lançam.
+4. Mesmo arquivo, fim: `nextAttemptAt` (fórmula do backoff) e as constantes.
+5. `test/unit/wager-transaction.test.ts`: a matriz 5×5 em `transições`, depois o
+   backoff com relógio fixo.
 
 ## Como verificar
 
 ```bash
 bun run tarefa:gate
 ```
+
+Resultado em 28/10/2026, depois do rebase na `main` (9726c7a): typecheck ✔,
+skills ✔, arquitetura ✔, **unidade ✖**. Os 88 testes da T12 falham com
+`Não implementado: T10`, porque usam o `Money.from` real, sem dublê (briefing).
+Ficam verdes depois do merge da T10.
+
+Conferido fora do worktree: numa cópia descartável de `src/` e `test/unit/`, com
+o `money.ts` da branch `claude/t10-money-29fa4e` (f841332) por cima, o comando
+`bun test ./test/unit/wager-transaction.test.ts` dá **88 pass, 0 fail**. Nada da
+T10 entrou nesta branch. A T10 não muda `errors.ts`, então as duas branches não
+conflitam.
 
 ## Decisões pendentes
 
@@ -176,7 +208,9 @@ Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
 
 ## Fora de escopo / dívida
 
-- (nenhum)
+- Validar vazio e tamanho de `providerId`, ids e `roundId` (MODELAGEM 2.2): fica
+  na borda (zod), ver "Alternativas descartadas".
+- Contagem de tentativas da referência: decisão 4, para a T16.
 
 ## Revisão cruzada
 
