@@ -170,4 +170,22 @@ describe('OutboxMessage', () => {
       expect(outbox.nextAttemptAt.getTime() - fixedNow.getTime()).toBe(expectedDelayMs);
     }
   });
+
+  it('scheduleRetry caps at 60 s even when 2^attempts overflows to Infinity', () => {
+    const fixedNow = new Date('2026-04-19T16:00:00.000Z');
+    const outbox = OutboxMessage.rehydrate({
+      id: 'evt-300',
+      aggregateId: 'tx-300',
+      eventType: 'WagerTransactionProcessed',
+      payload: { eventId: 'evt-300' },
+      occurredAt,
+      attempts: 2_000,
+      nextAttemptAt: occurredAt,
+    });
+
+    outbox.scheduleRetry(fixedNow);
+
+    expect(outbox.attempts).toBe(2_001);
+    expect(outbox.nextAttemptAt.getTime() - fixedNow.getTime()).toBe(OUTBOX_BACKOFF_MAX_MS);
+  });
 });

@@ -90,10 +90,8 @@ export class OutboxMessage {
   /** `attempts++` e `nextAttemptAt = now + min(2^attempts × base, teto)`. O relógio é injetado, sem jitter. */
   scheduleRetry(now: Date): void {
     this._attempts += 1;
-    const rawDelayMs =
-      this._attempts >= 6
-        ? OUTBOX_BACKOFF_MAX_MS
-        : 2 ** this._attempts * OUTBOX_BACKOFF_BASE_MS;
+    // `2 ** n` vira `Infinity` em expoente alto; a comparação abaixo devolve o teto.
+    const rawDelayMs = 2 ** this._attempts * OUTBOX_BACKOFF_BASE_MS;
     const delayMs = rawDelayMs > OUTBOX_BACKOFF_MAX_MS ? OUTBOX_BACKOFF_MAX_MS : rawDelayMs;
     this._nextAttemptAt = new Date(now.getTime() + delayMs);
   }
