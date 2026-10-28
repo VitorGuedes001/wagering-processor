@@ -21,7 +21,7 @@ custo sem retorno.
 | D27 | Validação de entrada com **zod**, num schema único para HTTP e SQS | Mesmas regras nas duas entradas. `z.string()` em `amount` barra número JSON (restrição 5.1, ver seção 8). Evita `class-validator` + `class-transformer`, que dependem de metadata de decorators |
 | D28 | Um processo roda tudo (API, consumidor, workers), com componentes ligados por env | Os testes com ≥ 3 instâncias (§13.4) sobem o mesmo binário 3×. Flags permitem isolar componentes em teste |
 | D29 | Logs com o `ConsoleLogger` do Nest em modo JSON. Contexto de log (`correlationId` etc.) via `AsyncLocalStorage` | Sem dependência nova. ALS aqui é só para log, nunca para transação |
-| D30 | Métricas com `prom-client` em `GET /metrics` | Formato padrão, contador e histograma prontos. §12 não fixa formato |
+| D30 | Métricas com `@prometheus-io/client` em `GET /metrics` | Formato padrão, contador e histograma prontos. §12 não fixa formato. É o sucessor oficial do `prom-client`, que foi depreciado, com a mesma API |
 | D31 | Autenticação não implementada. Ficam `AuthGuard` no-op e `ProviderIdentityPort` como pontos de extensão | Auth não vale pontos (§2). O desenho com Keycloak fica descrito na seção 10 |
 | D32 | Workers são laços simples com `setTimeout`, presos ao ciclo de vida do Nest | Dois workers não justificam `@nestjs/schedule`, e o laço permite drenar no `SIGTERM` |
 
@@ -62,9 +62,10 @@ src/
     resolve-pending-references.ts  publish-outbox.ts
     reconcile-wallet.ts            queries.ts   # leituras simples
   infrastructure/
-    persistence/  mikro-orm.config.ts  records/*.ts  unit-of-work.ts  *-repository.ts  db-errors.ts
-    messaging/    sqs-client.ts  sqs-event-publisher.ts
+    persistence/  persistence.module.ts  mikro-orm.config.ts  records/*.ts  unit-of-work.ts  *-repository.ts  db-errors.ts
+    messaging/    messaging.module.ts  sqs-event-publisher.ts
     observability/  logger.ts  metrics.ts  request-context.ts
+    health/       readiness-probe.ts   # toca Postgres e SQS, por isso fica fora de interface
     clock.ts  id-generator.ts  config.ts
   interface/
     http/     wallets.controller.ts  wagering.controller.ts  error-mapping.ts  schemas.ts  auth.guard.ts
@@ -400,6 +401,6 @@ processo na largada.
 | `src/main.ts` | `enableShutdownHooks()` e logger JSON |
 | `src/mikro-orm.config.ts` | move para `infrastructure/persistence`. Records explícitos |
 | `smoke_balance` (entidade, migration, script) | remover (SCHEMA 8) |
-| `package.json` | `+ zod`, `+ prom-client`, `- decimal.js` (D8). Scripts de teste por nível ([TESTES.md](TESTES.md) 2) |
+| `package.json` | `+ zod`, `+ @prometheus-io/client`, `- decimal.js` (D8). Scripts de teste por nível ([TESTES.md](TESTES.md) 2) |
 | `src/main.ts` | aceitar `PORT=0` e anunciar a porta real no log de boot |
 | `Dockerfile` (novo) | imagem da aplicação, para entrar no Compose e para o teste de `SIGTERM` em Linux |

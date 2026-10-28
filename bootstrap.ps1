@@ -45,20 +45,11 @@ Write-Host "  docker ok"
 # ---------------------------------------------------------------- dependências
 Step "Instalando dependências"
 
-bun add `
-    '@nestjs/common' '@nestjs/core' '@nestjs/platform-express' `
-    reflect-metadata rxjs
-if ($LASTEXITCODE -ne 0) { Fail "bun add (nest) falhou." "" }
+bun install --frozen-lockfile
+if ($LASTEXITCODE -ne 0) { Fail "bun install falhou." "O bun.lock está fora de sincronia com o package.json?" }
 
-bun add `
-    '@mikro-orm/core' '@mikro-orm/postgresql' '@mikro-orm/migrations' '@mikro-orm/nestjs' '@mikro-orm/decorators'
-if ($LASTEXITCODE -ne 0) { Fail "bun add (mikro-orm) falhou." "" }
-
-bun add '@aws-sdk/client-sqs' decimal.js
-if ($LASTEXITCODE -ne 0) { Fail "bun add (aws/decimal) falhou." "" }
-
-bun add -d '@mikro-orm/cli' typescript bun-types
-if ($LASTEXITCODE -ne 0) { Fail "bun add -d falhou." "" }
+bun run typecheck
+if ($LASTEXITCODE -ne 0) { Fail "typecheck falhou." "" }
 
 # ---------------------------------------------------------------- infra
 Step "Subindo Postgres e LocalStack"
@@ -91,6 +82,18 @@ if (-not $ok) {
          "Rode: docker compose logs localstack. Causa comum no Windows: o init-queues.sh salvo com quebra de linha CRLF."
 }
 
+$queues = (docker exec wagering-localstack awslocal sqs list-queues 2>$null) -join ''
+if ($queues -notmatch 'wagering-events\.fifo') {
+    Fail "A fila de eventos não existe." "Recrie o LocalStack: docker compose up -d --force-recreate localstack"
+}
+$redrive = (docker exec wagering-localstack awslocal sqs get-queue-attributes `
+    --queue-url 'http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/wager-transactions.fifo' `
+    --attribute-names RedrivePolicy 2>$null) -join ''
+if ($redrive -notmatch 'maxReceiveCount') {
+    Fail "A fila de entrada está sem redrive para a DLQ." "Recrie o LocalStack: docker compose up -d --force-recreate localstack"
+}
+Write-Host "  filas ok, redrive para a DLQ ligado"
+
 # ---------------------------------------------------------------- migrations
 Step "Migrations (up, down, up)"
 
@@ -104,12 +107,6 @@ if ($LASTEXITCODE -ne 0) {
 
 bun run db:rollback  | Out-Null
 bun run db:migrate   | Out-Null
-
-# ---------------------------------------------------------------- smoke
-Step "Smoke test"
-
-bun run smoke
-if ($LASTEXITCODE -ne 0) { Fail "Smoke test falhou." "A saída acima diz qual verificação quebrou." }
 
 # ---------------------------------------------------------------- app
 Step "Subindo a aplicação e checando /health"

@@ -1,19 +1,22 @@
 import { defineConfig } from '@mikro-orm/postgresql';
 import { ReflectMetadataProvider } from '@mikro-orm/decorators/legacy';
 import { Migrator } from '@mikro-orm/migrations';
-import { SmokeBalance } from './entities/smoke-balance.entity';
+import { loadConfig } from '../config';
+
+const config = loadConfig();
 
 export default defineConfig({
-  host: process.env.DB_HOST ?? 'localhost',
-  port: Number(process.env.DB_PORT ?? 5434),
-  user: process.env.DB_USER ?? 'wagering',
-  password: process.env.DB_PASSWORD ?? 'wagering',
-  dbName: process.env.DB_NAME ?? 'wagering',
+  host: config.DB_HOST,
+  port: config.DB_PORT,
+  user: config.DB_USER,
+  password: config.DB_PASSWORD,
+  dbName: config.DB_NAME,
 
   // Descoberta explícita: nada de varrer pastas.
   // Com Bun, o scan de .ts via ts-morph costuma ser a primeira coisa a quebrar.
-  entities: [SmokeBalance],
+  entities: [],
   metadataProvider: ReflectMetadataProvider,
+  discovery: { warnWhenNoEntities: false },
 
   extensions: [Migrator],
   migrations: {
@@ -24,6 +27,6 @@ export default defineConfig({
     snapshot: false,
   },
 
-  debug: process.env.MIKRO_ORM_DEBUG === 'true',
+  debug: config.MIKRO_ORM_DEBUG,
   forceUtcTimezone: true,
 });

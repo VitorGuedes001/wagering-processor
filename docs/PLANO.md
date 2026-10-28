@@ -24,7 +24,7 @@ mais move.
 
 | Bloco | Conteúdo | Testes | Pronto quando | Est. | Pontos |
 |---|---|---|---|---|---|
-| **B0** Base | remove `smoke_balance` e `decimal.js`. Adiciona `zod` e `prom-client`. Redrive + `wagering-events.fifo` no `init-queues.sh`. Config validada por zod. Pastas de ARQUITETURA 2.1. `ARCHITECTURE.md` com os títulos | `bun run typecheck`, filas com redrive (`get-queue-attributes`) | infra sobe com a DLQ ligada e o projeto compila vazio | 1,5 | — |
+| **B0** Base | remove `smoke_balance` e `decimal.js`. Adiciona `zod` e `@prometheus-io/client`. Redrive + `wagering-events.fifo` no `init-queues.sh`. Config validada por zod. Pastas de ARQUITETURA 2.1. `ARCHITECTURE.md` com os títulos | `bun run typecheck`, filas com redrive (`get-queue-attributes`) | infra sobe com a DLQ ligada e o projeto compila vazio | 1,5 | — |
 | **B1** Domínio | `Money`, `Wallet`, `WagerTransaction`, `WalletLedgerEntry`, `InboxMessage`, `OutboxMessage`, eventos, `decideWager`, `reconcile`, `payloadHash`, códigos e erros | MODELAGEM 12, U-01 a U-05, A-01 a A-03 | `bun run test` verde, sem Docker | 6 | Correção financeira, Modelagem |
 | **B2** Schema | 3 migrations com `down`, triggers de SCHEMA 3. Infra de teste: preload, template, banco por arquivo, `invariants.ts` | I-01, I-02 | cada constraint e trigger tem um teste que a viola | 5 | Correção financeira, Concorrência |
 | **B3** Persistência | records MikroORM, repositórios, Unit of Work com timeouts, tradução de erros | I-03 | ida e volta de cada entidade, dinheiro como string | 4 | Modelagem |
