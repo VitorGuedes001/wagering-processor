@@ -81,9 +81,25 @@ O worktree aparece em `git worktree list` do `wagering-processor`.
 
 ## Revisão cruzada
 
-Preenchido pelo agente da outra ferramenta.
+Revisado pelo Antigravity (Gemini) contra `docs/CHALLENGE.md` (§5.1, §6.1, §9), `docs/MODELAGEM.md` (§2.1, §9.1, §10.4, §12, D8, D9), `docs/ARQUITETURA.md` (§2, §8), `docs/TESTES.md` (§4.1: U-01, U-02), `docs/EXECUCAO.md` (§6) e o contrato M0 (`m0-contratos`).
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
+| — | — | — | Nenhum achado (0 bloqueantes, 0 importantes, 0 menores). | — |
 
-Veredito: pendente
+O que foi verificado:
+- **Gate (`bun run tarefa:gate` no worktree da T10):** `typecheck` limpo (`tsc --noEmit`), `skills` sincronizadas, `unidade` (77 testes em `money.test.ts` e `payload-hash.test.ts`, 100 `expect()`) e `arquitetura` passando. Branch em dia com a `main` (`428e2d9`).
+- **Escopo e contrato M0:** apenas os 5 arquivos previstos (`src/domain/money.ts`, `src/domain/payload-hash.ts`, `test/unit/money.test.ts`, `test/unit/payload-hash.test.ts` e `docs/notas/T10-money.md`) foram tocados. Assinaturas públicas de `Money`, `MoneyProps`, `PayloadHashInput`, `canonicalJson` e `payloadHash` permanecem idênticas ao M0 (`m0-contratos`).
+- **Restrição 5.1 (dinheiro) e guarda A-03:** nenhum `number`, `parseFloat`, `Number(`, `toFixed` ou `Math.` em `src/domain/money.ts` ou `src/domain/payload-hash.ts`. Parse puramente textual via regex + `BigInt(integer) * 100n + BigInt(fraction)` e formatação textual via `/ 100n`, `% 100n` e `padStart(2, '0')` (ARQUITETURA §8).
+- **Camadas (ARQUITETURA §2):** `src/domain/money.ts` importa apenas `./errors`; `src/domain/payload-hash.ts` importa apenas `node:crypto` e tipos locais do domínio. Sem Nest, MikroORM, AWS SDK ou zod.
+- **Regras de `Money` (MODELAGEM §2.1, D8, D9):**
+  - `from` valida `typeof amount === 'string'` em runtime (U-01), exige `^(0|[1-9]\d*)\.(\d{2})$`, limita a 17 dígitos inteiros (`numeric(19,2)`), valida `currency` (`^[A-Z]{3}$`) e rejeita negativos, arredondamentos e formatos fora da tabela de §2.1 com `InvalidMoneyError`.
+  - `fromPersistence` aceita sinal `-` opcional (para `difference` de reconciliação), mantendo validação de 2 casas decimais, 17 dígitos inteiros e `currency`.
+  - `add`, `subtract`, `isLessThan` e `equals` exigem mesma moeda (`CurrencyMismatchError`); `zero` valida `currency`; `toJSON` e `toString` formatam negativos com `-` e 2 casas decimais.
+- **Regras de `canonicalJson` e `payloadHash` (MODELAGEM §9.1):**
+  - `canonicalJson` ordena chaves lexicograficamente em todos os níveis, sem espaços, omite propriedades com valor `undefined` (nunca serializa `null` para opcional ausente), respeita `toJSON()` (convertendo `Money` em `MoneyProps`) e lança `TypeError` para `bigint` cru.
+  - `payloadHash` projeta explicitamente apenas os 9 campos de negócio de MODELAGEM §9.1 antes de serializar, garantindo o mesmo hash SHA-256 hex entre HTTP e SQS mesmo quando recebe um `WagerCommand` ou envelope completo.
+- **Testes (MODELAGEM §12 e TESTES §4.1):** cobertura completa da tabela de rejeitados de §2.1, `U-01`, `U-02`, aritmética, imutabilidade, predicados, moeda divergente, `canonicalJson` e `payloadHash` (incluindo equivalência HTTP/SQS e sensibilidade a cada campo).
+- **Interpretações registradas na nota:** todas as três interpretações listadas em "Decisões pendentes" estão alinhadas com MODELAGEM §9.1 e o contrato `PayloadHashInput` do M0; nenhuma decisão pendente nova.
+
+Veredito: aprovado
