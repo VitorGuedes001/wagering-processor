@@ -58,6 +58,12 @@ Decisões da T11 (Wallet e ledger), aprovadas em 28/10/2026 — `docs/notas/T11-
 | D58 | Guardas além de §3 e §6: `WalletLedgerEntry.create` rejeita `balanceBefore` negativo e `walletVersion` que não seja inteiro `>= 1` (`LedgerArithmeticError`); `Wallet.open` rejeita `initialBalance` negativo (`InvalidMoneyError`) | Repetem no domínio os `CHECK` do schema (SCHEMA 2.1, 2.3) e a D16, para o erro aparecer antes do banco |
 | D59 | `debit`/`credit` com valor zero ou negativo lançam `LedgerArithmeticError`, não `InvalidMoneyError` | Chegar ali é bug (`decideWager` filtra antes e `LOSS` não move saldo): tem que virar 500, não um 400 que culpa o cliente (10.4) |
 
+Decisões da T16 (`decideWager` e `reconcile`), aprovadas em 28/10/2026 — `docs/notas/T16-decide-wager.md`:
+
+| # | Decisão | Por quê |
+|---|---|---|
+| D61 | Referência em `PENDING` ou `PENDING_REFERENCE` só devolve `AWAIT_REFERENCE` no passo 4 enquanto `!transaction.referenceAttemptsExhausted(backoff)`; quando as tentativas acabam, cai no passo 5 e é rejeitada com `REFERENCE_NOT_PROCESSED` | Garante que `decideWager` nunca devolve `AWAIT_REFERENCE` após esgotar as 10 tentativas de D11/D57, e reserva `REFERENCE_NOT_FOUND` para referência inexistente (§7.1) |
+
 ## 2. Value objects
 
 ### 2.1 Money
@@ -334,7 +340,7 @@ iguais é resolvida pela unicidade no schema (passo 5).
 | `CURRENCY_MISMATCH` | `REJECTED` | moeda ≠ wallet | corrigir, novo `externalTransactionId` |
 | `WALLET_PLAYER_MISMATCH` | `REJECTED` | wallet de outro player | corrigir, novo `externalTransactionId` |
 | `REFERENCE_NOT_FOUND` | `REJECTED` | referência não apareceu até o limite (D11) | investigar a referência |
-| `REFERENCE_NOT_PROCESSED` | `REJECTED` | referência `REJECTED`/`FAILED` | não reenviar |
+| `REFERENCE_NOT_PROCESSED` | `REJECTED` | referência `REJECTED`/`FAILED`, ou ainda pendente quando as tentativas acabaram (D61) | não reenviar |
 | `REFERENCE_KIND_NOT_ALLOWED` | `REJECTED` | ex.: `REFUND` de `WIN`, `ROLLBACK` de `LOSS` | corrigir |
 | `REFERENCE_CONTEXT_MISMATCH` | `REJECTED` | wallet, player, moeda ou rodada diferentes | corrigir |
 | `REFERENCE_AMOUNT_MISMATCH` | `REJECTED` | valor ≠ referência (reversão parcial fora de escopo) | corrigir |

@@ -15,7 +15,7 @@ export enum FailureCode {
   WalletPlayerMismatch = 'WALLET_PLAYER_MISMATCH',
   /** Referência não apareceu até o limite de tentativas (D11). */
   ReferenceNotFound = 'REFERENCE_NOT_FOUND',
-  /** Referência existe, mas está `REJECTED` ou `FAILED`. */
+  /** Referência `REJECTED`/`FAILED`, ou ainda pendente quando as tentativas acabaram (D61). */
   ReferenceNotProcessed = 'REFERENCE_NOT_PROCESSED',
   /** Kind da referência não pode ser referenciado por este kind (MODELAGEM 4.2). */
   ReferenceKindNotAllowed = 'REFERENCE_KIND_NOT_ALLOWED',
