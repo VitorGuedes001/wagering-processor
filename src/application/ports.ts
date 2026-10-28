@@ -20,6 +20,32 @@ export class TransientInfrastructureError extends Error {
   }
 }
 
+/** Índices únicos que o use case precisa distinguir (SCHEMA 2, nomes explícitos de propósito). */
+export type UniqueConstraint =
+  | 'wallet_player_currency_uq'
+  | 'wager_tx_idempotency_uq'
+  | 'wager_tx_external_uq'
+  | 'wager_tx_single_reversal_uq'
+  | 'wager_tx_single_opening_uq'
+  | 'ledger_transaction_uq'
+  | 'ledger_wallet_version_uq';
+
+/**
+ * `23505` traduzido pela infraestrutura, sem vazar o erro do driver para a
+ * aplicação. O use case decide pela constraint (SCHEMA 5): idempotência → refaz
+ * o fluxo uma vez; `wallet_player_currency_uq` → `WALLET_ALREADY_EXISTS`; as
+ * demais → bug, porque o lock da wallet deveria ter impedido.
+ */
+export class UniqueViolationError extends Error {
+  constructor(
+    readonly constraint: UniqueConstraint,
+    options?: { cause?: unknown },
+  ) {
+    super(`Violação de unicidade: ${constraint}`, options);
+    this.name = 'UniqueViolationError';
+  }
+}
+
 // ------------------------------------------------------------------ transação
 
 export interface UnitOfWork {
