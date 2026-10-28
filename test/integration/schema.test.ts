@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import type { SQL } from 'bun';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { createTestDatabase, type TestDatabase } from '../support/database';
 import { eventually } from '../support/eventually';
 import { assertAllWalletsConsistent } from '../support/invariants';
+import { createTestQueues, deleteTestQueues } from '../support/queues';
 
 const VALID_HASH_A = 'a'.repeat(64);
 const VALID_HASH_B = 'b'.repeat(64);
@@ -18,7 +20,7 @@ interface PgErrorShape {
 /**
  * Executa `fn` e verifica que o PostgreSQL rejeita a operação com o `SQLSTATE`
  * esperado (`23514` CHECK, `23505` UNIQUE, `23503` FK, `23000` trigger, `55P03` lock_timeout)
- * e, quando informado, com o nome da constraint ou trigger.
+ * e, quando informado, com o campo `constraint` do erro (D51: nunca pela mensagem textual).
  */
 async function expectPgError(
   fn: () => Promise<unknown>,
@@ -45,15 +47,7 @@ async function expectPgError(
   expect(actualState).toBe(expectedSqlState);
 
   if (expectedConstraintOrTrigger !== undefined) {
-    const constraint = pgErr.constraint ?? '';
-    const message = pgErr.message ?? '';
-    const matches =
-      constraint === expectedConstraintOrTrigger || message.includes(expectedConstraintOrTrigger);
-    if (!matches) {
-      throw new Error(
-        `Esperava constraint/trigger "${expectedConstraintOrTrigger}", mas recebeu constraint="${constraint}" message="${message}"`,
-      );
-    }
+    expect(pgErr.constraint).toBe(expectedConstraintOrTrigger);
   }
 }
 
@@ -76,6 +70,33 @@ async function inTx<T>(conn: SQL, work: (conn: SQL) => Promise<T>): Promise<T> {
     }
     throw err;
   }
+}
+
+/**
+ * Prova explicitamente que `work` passa dentro da transação e que a falha
+ * `expectedSqlState` + `expectedConstraint` acontece exclusivamente no `COMMIT`
+ * (triggers `DEFERRABLE INITIALLY DEFERRED`, SCHEMA §3 e §9).
+ */
+async function expectDeferredCommitError(
+  conn: SQL,
+  work: (conn: SQL) => Promise<void>,
+  expectedSqlState: string,
+  expectedConstraint: string,
+): Promise<void> {
+  await conn.unsafe('BEGIN');
+  let workCompleted = false;
+  try {
+    await work(conn);
+    workCompleted = true;
+    await expectPgError(() => conn.unsafe('COMMIT'), expectedSqlState, expectedConstraint);
+  } finally {
+    try {
+      await conn.unsafe('ROLLBACK');
+    } catch {
+      // O COMMIT com falha de constraint trigger deferred já encerra a transação em rollback.
+    }
+  }
+  expect(workCompleted).toBe(true);
 }
 
 async function insertZeroWallet(
@@ -206,7 +227,7 @@ async function applyProcessedBet(
 }
 
 describe('I-01 — Reversibilidade das migrations (up → down → up)', () => {
-  test('I-01: aplica migrations em banco vazio, reverte até zero sem deixar tabelas/funções e reaplica', async () => {
+  test('I-01: aplica migrations em banco vazio, reverte até zero sem deixar tabelas, funções, triggers ou índices das migrations e reaplica', async () => {
     const emptyDb = await createTestDatabase({ fromTemplate: false });
     try {
       const expectedTables = [
@@ -223,29 +244,50 @@ describe('I-01 — Reversibilidade das migrations (up → down → up)', () => {
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'public'
-          AND table_name IN ('wallet', 'wager_transaction', 'wallet_ledger_entry', 'inbox_message', 'outbox_message')
+          AND table_name <> 'mikro_orm_migrations'
         ORDER BY table_name
       `;
       expect(afterFirstUp.map((r) => r.table_name)).toEqual(expectedTables);
 
-      // 2. down até zero
+      // 2. down até zero: não pode sobrar nenhuma tabela, função, trigger ou índice das migrations
       await emptyDb.migrateDownToZero();
-      const afterDown = await emptyDb.sql<Array<{ table_name: string }>>`
+
+      const remainingTables = await emptyDb.sql<Array<{ table_name: string }>>`
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'public'
-          AND table_name IN ('wallet', 'wager_transaction', 'wallet_ledger_entry', 'inbox_message', 'outbox_message')
+        ORDER BY table_name
       `;
-      expect([...afterDown]).toEqual([]);
+      expect(remainingTables.map((r) => r.table_name)).toEqual(['mikro_orm_migrations']);
 
       const leftoverFunctions = await emptyDb.sql<Array<{ proname: string }>>`
         SELECT p.proname
         FROM pg_proc p
         JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE n.nspname = 'public'
-          AND p.proname LIKE '%_fn'
+        ORDER BY p.proname
       `;
       expect([...leftoverFunctions]).toEqual([]);
+
+      const leftoverTriggers = await emptyDb.sql<Array<{ tgname: string }>>`
+        SELECT t.tgname
+        FROM pg_trigger t
+        JOIN pg_class c ON c.oid = t.tgrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND NOT t.tgisinternal
+        ORDER BY t.tgname
+      `;
+      expect([...leftoverTriggers]).toEqual([]);
+
+      const leftoverIndexes = await emptyDb.sql<Array<{ indexname: string }>>`
+        SELECT indexname
+        FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND tablename <> 'mikro_orm_migrations'
+        ORDER BY indexname
+      `;
+      expect([...leftoverIndexes]).toEqual([]);
 
       // 3. up novamente
       await emptyDb.migrateUp();
@@ -253,7 +295,7 @@ describe('I-01 — Reversibilidade das migrations (up → down → up)', () => {
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'public'
-          AND table_name IN ('wallet', 'wager_transaction', 'wallet_ledger_entry', 'inbox_message', 'outbox_message')
+          AND table_name <> 'mikro_orm_migrations'
         ORDER BY table_name
       `;
       expect(afterSecondUp.map((r) => r.table_name)).toEqual(expectedTables);
@@ -283,12 +325,86 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
   });
 
   describe('Caminho feliz e triggers deferred', () => {
-    test('wallet nova com saldo 0.00 e version = 1 comita sem lançamento no ledger', async () => {
+    test('wallet nova com saldo 0.00 (version = 1, sem OPENING) recebe 1º lançamento em wallet_version = 2 e passa em assertAllWalletsConsistent', async () => {
       const wallet = await insertZeroWallet(db.sql);
       const rows = await db.sql<Array<{ balance: string; version: number }>>`
         SELECT balance::text AS balance, version FROM wallet WHERE id = ${wallet.id}
       `;
       expect([...rows]).toEqual([{ balance: '0.00', version: 1 }]);
+      await assertAllWalletsConsistent(db);
+
+      // 1º lançamento da wallet aberta sem saldo inicial: WIN leva version de 1 para 2 (sem wallet_version = 1 no ledger)
+      const winTxId = randomUUID();
+      const winEntryId = randomUUID();
+      await inTx(db.sql, async (tx) => {
+        await tx`
+          INSERT INTO wager_transaction (
+            id, wallet_id, player_id, kind, status, amount, currency,
+            provider_id, external_transaction_id, idempotency_key, payload_hash,
+            round_id, game_id, balance_after, created_at, updated_at, processed_at
+          )
+          VALUES (
+            ${winTxId}, ${wallet.id}, ${wallet.playerId}, 'WIN', 'PROCESSED', 50.00, 'BRL',
+            'provider-a', 'ext-zero-win-1', 'provider-a:ext-zero-win-1', ${VALID_HASH_A},
+            'round-1', 'fortune-chimp', 50.00, now(), now(), now()
+          )
+        `;
+        await tx`
+          INSERT INTO wallet_ledger_entry (
+            id, wallet_id, transaction_id, wallet_version, direction,
+            amount, currency, balance_before, balance_after, created_at
+          )
+          VALUES (
+            ${winEntryId}, ${wallet.id}, ${winTxId}, 2, 'CREDIT',
+            50.00, 'BRL', 0.00, 50.00, now()
+          )
+        `;
+        await tx`
+          UPDATE wallet
+             SET balance = 50.00,
+                 version = 2,
+                 updated_at = now()
+           WHERE id = ${wallet.id}
+        `;
+      });
+
+      await assertAllWalletsConsistent(db);
+
+      // 2º lançamento na mesma wallet: BET leva version de 2 para 3
+      const second = await applyProcessedBet(db.sql, {
+        walletId: wallet.id,
+        playerId: wallet.playerId,
+        amount: '20.00',
+        balanceBefore: '50.00',
+        balanceAfter: '30.00',
+        nextVersion: 3,
+      });
+
+      await assertAllWalletsConsistent(db);
+
+      // Se a cadeia balance_before = lag(balance_after) for adulterada via replica, a checagem [2] detecta
+      await inTx(db.sql, async (tx) => {
+        await tx.unsafe('SET LOCAL session_replication_role = replica');
+        await tx`
+          UPDATE wallet_ledger_entry
+             SET balance_before = 60.00,
+                 balance_after = 40.00
+           WHERE id = ${second.entryId}
+        `;
+      });
+      await expect(assertAllWalletsConsistent(db)).rejects.toThrow(/\[2\] Cadeia de ledger quebrada/);
+
+      // Restaura lançamento íntegro para o afterEach
+      await inTx(db.sql, async (tx) => {
+        await tx.unsafe('SET LOCAL session_replication_role = replica');
+        await tx`
+          UPDATE wallet_ledger_entry
+             SET balance_before = 50.00,
+                 balance_after = 30.00
+           WHERE id = ${second.entryId}
+        `;
+      });
+      await assertAllWalletsConsistent(db);
     });
 
     test('wallet com saldo inicial > 0 + OPENING + lançamento comita e aceita ambas as ordens de UPDATE/INSERT no commit', async () => {
@@ -411,7 +527,7 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
       );
     });
 
-    test('trigger wallet_version_rule: exige version = OLD.version + 1 quando e somente quando balance muda, e bloqueia mutação de identidade (23000)', async () => {
+    test('trigger wallet_version_rule: exige version = OLD.version + 1 quando e somente quando balance muda, e bloqueia mutação de id, player_id, currency e created_at (23000)', async () => {
       const wallet = await insertZeroWallet(db.sql);
 
       // 1. Subir version sem mudar balance
@@ -444,11 +560,11 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
         'wallet_version_rule',
       );
 
-      // 4. Tentar alterar currency ou player_id
+      // 4. Tentar alterar id, player_id, currency ou created_at
       await expectPgError(
         () =>
           inTx(db.sql, async (tx) => {
-            await tx`UPDATE wallet SET currency = 'USD' WHERE id = ${wallet.id}`;
+            await tx`UPDATE wallet SET id = ${randomUUID()} WHERE id = ${wallet.id}`;
           }),
         '23000',
         'wallet_version_rule',
@@ -462,35 +578,53 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
         '23000',
         'wallet_version_rule',
       );
-    });
 
-    test('trigger deferred wallet_ledger_match: rejeita no COMMIT mudança de saldo sem lançamento correspondente (23000)', async () => {
-      // 1. Criar wallet com saldo inicial > 0 sem lançamento no ledger falha no COMMIT
       await expectPgError(
         () =>
           inTx(db.sql, async (tx) => {
-            await tx`
-              INSERT INTO wallet (id, player_id, currency, balance, version, created_at, updated_at)
-              VALUES (${randomUUID()}, ${randomUUID()}, 'BRL', 100.00, 1, now(), now())
-            `;
+            await tx`UPDATE wallet SET currency = 'USD' WHERE id = ${wallet.id}`;
           }),
+        '23000',
+        'wallet_version_rule',
+      );
+
+      await expectPgError(
+        () =>
+          inTx(db.sql, async (tx) => {
+            await tx`UPDATE wallet SET created_at = now() - interval '1 day' WHERE id = ${wallet.id}`;
+          }),
+        '23000',
+        'wallet_version_rule',
+      );
+    });
+
+    test('trigger deferred wallet_ledger_match: INSERT/UPDATE passa na transação e falha no COMMIT sem lançamento correspondente (23000)', async () => {
+      // 1. Criar wallet com saldo inicial > 0 sem lançamento no ledger: INSERT passa, COMMIT falha
+      await expectDeferredCommitError(
+        db.sql,
+        async (tx) => {
+          await tx`
+            INSERT INTO wallet (id, player_id, currency, balance, version, created_at, updated_at)
+            VALUES (${randomUUID()}, ${randomUUID()}, 'BRL', 100.00, 1, now(), now())
+          `;
+        },
         '23000',
         'wallet_ledger_match',
       );
 
-      // 2. Atualizar saldo e version = version + 1 sem inserir lançamento falha no COMMIT
+      // 2. Atualizar saldo e version = version + 1 sem inserir lançamento: UPDATE passa, COMMIT falha
       const funded = await insertFundedWallet(db.sql, '100.00', 'BRL');
-      await expectPgError(
-        () =>
-          inTx(db.sql, async (tx) => {
-            await tx`
-              UPDATE wallet
-                 SET balance = 80.00,
-                     version = 2,
-                     updated_at = now()
-               WHERE id = ${funded.walletId}
-            `;
-          }),
+      await expectDeferredCommitError(
+        db.sql,
+        async (tx) => {
+          await tx`
+            UPDATE wallet
+               SET balance = 80.00,
+                   version = 2,
+                   updated_at = now()
+             WHERE id = ${funded.walletId}
+          `;
+        },
         '23000',
         'wallet_ledger_match',
       );
@@ -510,6 +644,54 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
   });
 
   describe('Violações de wager_transaction (SCHEMA 2.2, 3, 9)', () => {
+    test('FKs de wager_transaction: wallet_id inexistente e reference_transaction_id inexistente (23503)', async () => {
+      const wallet = await insertZeroWallet(db.sql);
+
+      // 1. wager_transaction_wallet_id_fkey
+      await expectPgError(
+        () =>
+          inTx(db.sql, async (tx) => {
+            await tx`
+              INSERT INTO wager_transaction (
+                id, wallet_id, player_id, kind, status, amount, currency,
+                provider_id, external_transaction_id, idempotency_key, payload_hash,
+                round_id, game_id, balance_after, created_at, updated_at, processed_at
+              )
+              VALUES (
+                ${randomUUID()}, ${randomUUID()}, ${wallet.playerId}, 'LOSS', 'PROCESSED', 0.00, 'BRL',
+                'prov', 'ext-fk-wallet', 'prov:ext-fk-wallet', ${VALID_HASH_A},
+                'r-1', 'g-1', 0.00, now(), now(), now()
+              )
+            `;
+          }),
+        '23503',
+        'wager_transaction_wallet_id_fkey',
+      );
+
+      // 2. wager_transaction_reference_transaction_id_fkey
+      await expectPgError(
+        () =>
+          inTx(db.sql, async (tx) => {
+            await tx`
+              INSERT INTO wager_transaction (
+                id, wallet_id, player_id, kind, status, amount, currency,
+                provider_id, external_transaction_id, idempotency_key, payload_hash,
+                round_id, game_id, reference_external_transaction_id, reference_transaction_id,
+                balance_after, created_at, updated_at, processed_at
+              )
+              VALUES (
+                ${randomUUID()}, ${wallet.id}, ${wallet.playerId}, 'LOSS', 'PROCESSED', 0.00, 'BRL',
+                'prov', 'ext-fk-ref', 'prov:ext-fk-ref', ${VALID_HASH_A},
+                'r-1', 'g-1', 'ext-non-existent', ${randomUUID()},
+                0.00, now(), now(), now()
+              )
+            `;
+          }),
+        '23503',
+        'wager_transaction_reference_transaction_id_fkey',
+      );
+    });
+
     test('CHECKs de kind, status, amount (D3: só LOSS aceita 0.00) e OPENING', async () => {
       const wallet = await insertZeroWallet(db.sql);
 
@@ -697,7 +879,7 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
         'wager_tx_reference_forbidden_ck',
       );
 
-      // Cria uma transação base (LOSS PROCESSED) para usar o id em testes de FK de referência
+      // Cria uma transação base (LOSS PROCESSED) para usar o id em testes de referência
       const baseTxId = randomUUID();
       await inTx(db.sql, async (tx) => {
         await tx`
@@ -1086,12 +1268,17 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
       );
     });
 
-    test('trigger wager_tx_guard: protege status terminal, transição inválida de PENDING_REFERENCE, colunas imutáveis e DELETE (23000)', async () => {
+    test('trigger wager_tx_guard: congela linha inteira em PROCESSED, REJECTED e FAILED (D52), protege colunas de identidade, bloqueia DELETE e aceita os caminhos válidos de PENDING_REFERENCE (23000)', async () => {
       const wallet = await insertZeroWallet(db.sql);
-      const lossTxId = randomUUID();
+      const otherWallet = await insertZeroWallet(db.sql);
+      const baseLossTxId = randomUUID();
+      const processedWithRefTxId = randomUUID();
+      const rejectedTxId = randomUUID();
+      const failedTxId = randomUUID();
       const pendingRefTxId = randomUUID();
 
       await inTx(db.sql, async (tx) => {
+        // Transação terminal PROCESSED base
         await tx`
           INSERT INTO wager_transaction (
             id, wallet_id, player_id, kind, status, amount, currency,
@@ -1099,11 +1286,53 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
             round_id, game_id, balance_after, created_at, updated_at, processed_at
           )
           VALUES (
-            ${lossTxId}, ${wallet.id}, ${wallet.playerId}, 'LOSS', 'PROCESSED', 0.00, 'BRL',
-            'prov', 'ext-term', 'prov:ext-term', ${VALID_HASH_A},
+            ${baseLossTxId}, ${wallet.id}, ${wallet.playerId}, 'LOSS', 'PROCESSED', 0.00, 'BRL',
+            'prov', 'ext-term-proc', 'prov:ext-term-proc', ${VALID_HASH_A},
             'r-1', 'g-1', 0.00, now(), now(), now()
           )
         `;
+        // Transação terminal PROCESSED com referência (para testar tentativa de mudar reference_transaction_id)
+        await tx`
+          INSERT INTO wager_transaction (
+            id, wallet_id, player_id, kind, status, amount, currency,
+            provider_id, external_transaction_id, idempotency_key, payload_hash,
+            round_id, game_id, reference_external_transaction_id, reference_transaction_id,
+            balance_after, created_at, updated_at, processed_at
+          )
+          VALUES (
+            ${processedWithRefTxId}, ${wallet.id}, ${wallet.playerId}, 'LOSS', 'PROCESSED', 0.00, 'BRL',
+            'prov', 'ext-term-ref', 'prov:ext-term-ref', ${VALID_HASH_A},
+            'r-1', 'g-1', 'ext-term-proc', ${baseLossTxId},
+            0.00, now(), now(), now()
+          )
+        `;
+        // Transação terminal REJECTED
+        await tx`
+          INSERT INTO wager_transaction (
+            id, wallet_id, player_id, kind, status, amount, currency,
+            provider_id, external_transaction_id, idempotency_key, payload_hash,
+            round_id, game_id, failure_code, balance_after, created_at, updated_at
+          )
+          VALUES (
+            ${rejectedTxId}, ${wallet.id}, ${wallet.playerId}, 'BET', 'REJECTED', 10.00, 'BRL',
+            'prov', 'ext-term-rej', 'prov:ext-term-rej', ${VALID_HASH_A},
+            'r-1', 'g-1', 'INSUFFICIENT_FUNDS', 0.00, now(), now()
+          )
+        `;
+        // Transação terminal FAILED
+        await tx`
+          INSERT INTO wager_transaction (
+            id, wallet_id, player_id, kind, status, amount, currency,
+            provider_id, external_transaction_id, idempotency_key, payload_hash,
+            round_id, game_id, failure_code, created_at, updated_at
+          )
+          VALUES (
+            ${failedTxId}, ${wallet.id}, ${wallet.playerId}, 'BET', 'FAILED', 10.00, 'BRL',
+            'prov', 'ext-term-fail', 'prov:ext-term-fail', ${VALID_HASH_A},
+            'r-1', 'g-1', 'REFERENCE_NOT_FOUND', now(), now()
+          )
+        `;
+        // Transação não-terminal PENDING_REFERENCE
         await tx`
           INSERT INTO wager_transaction (
             id, wallet_id, player_id, kind, status, amount, currency,
@@ -1120,23 +1349,121 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
         `;
       });
 
-      // 1. Alterar transação em status terminal (PROCESSED)
+      // 1. D52 em PROCESSED: congelamento integral da linha (mudar só balance_after, processed_at, updated_at, reference_transaction_id ou status)
+      await expectPgError(
+        () =>
+          inTx(db.sql, async (tx) => {
+            await tx`UPDATE wager_transaction SET balance_after = 99.00 WHERE id = ${baseLossTxId}`;
+          }),
+        '23000',
+        'wager_tx_guard',
+      );
+      await expectPgError(
+        () =>
+          inTx(db.sql, async (tx) => {
+            await tx`UPDATE wager_transaction SET processed_at = now() + interval '1 hour' WHERE id = ${baseLossTxId}`;
+          }),
+        '23000',
+        'wager_tx_guard',
+      );
+      await expectPgError(
+        () =>
+          inTx(db.sql, async (tx) => {
+            await tx`UPDATE wager_transaction SET updated_at = now() + interval '1 hour' WHERE id = ${baseLossTxId}`;
+          }),
+        '23000',
+        'wager_tx_guard',
+      );
+      await expectPgError(
+        () =>
+          inTx(db.sql, async (tx) => {
+            await tx`UPDATE wager_transaction SET reference_transaction_id = ${rejectedTxId} WHERE id = ${processedWithRefTxId}`;
+          }),
+        '23000',
+        'wager_tx_guard',
+      );
       await expectPgError(
         () =>
           inTx(db.sql, async (tx) => {
             await tx`
               UPDATE wager_transaction
-                 SET status = 'REJECTED',
-                     failure_code = 'INSUFFICIENT_FUNDS',
-                     processed_at = NULL
-               WHERE id = ${lossTxId}
+                 SET status = 'REJECTED', failure_code = 'INSUFFICIENT_FUNDS', processed_at = NULL
+               WHERE id = ${baseLossTxId}
             `;
           }),
         '23000',
         'wager_tx_guard',
       );
 
-      // 2. Voltar PENDING_REFERENCE para PENDING
+      // 2. D52 em REJECTED: congelamento integral (mudar só balance_after, failure_code, updated_at ou status)
+      await expectPgError(
+        () =>
+          inTx(db.sql, async (tx) => {
+            await tx`UPDATE wager_transaction SET balance_after = 50.00 WHERE id = ${rejectedTxId}`;
+          }),
+        '23000',
+        'wager_tx_guard',
+      );
+      await expectPgError(
+        () =>
+          inTx(db.sql, async (tx) => {
+            await tx`UPDATE wager_transaction SET failure_code = 'CURRENCY_MISMATCH' WHERE id = ${rejectedTxId}`;
+          }),
+        '23000',
+        'wager_tx_guard',
+      );
+      await expectPgError(
+        () =>
+          inTx(db.sql, async (tx) => {
+            await tx`UPDATE wager_transaction SET updated_at = now() + interval '1 hour' WHERE id = ${rejectedTxId}`;
+          }),
+        '23000',
+        'wager_tx_guard',
+      );
+      await expectPgError(
+        () =>
+          inTx(db.sql, async (tx) => {
+            await tx`
+              UPDATE wager_transaction
+                 SET status = 'FAILED', balance_after = NULL
+               WHERE id = ${rejectedTxId}
+            `;
+          }),
+        '23000',
+        'wager_tx_guard',
+      );
+
+      // 3. D52 em FAILED: congelamento integral (mudar só failure_code, updated_at ou status)
+      await expectPgError(
+        () =>
+          inTx(db.sql, async (tx) => {
+            await tx`UPDATE wager_transaction SET failure_code = 'CURRENCY_MISMATCH' WHERE id = ${failedTxId}`;
+          }),
+        '23000',
+        'wager_tx_guard',
+      );
+      await expectPgError(
+        () =>
+          inTx(db.sql, async (tx) => {
+            await tx`UPDATE wager_transaction SET updated_at = now() + interval '1 hour' WHERE id = ${failedTxId}`;
+          }),
+        '23000',
+        'wager_tx_guard',
+      );
+      await expectPgError(
+        () =>
+          inTx(db.sql, async (tx) => {
+            await tx`
+              UPDATE wager_transaction
+                 SET status = 'REJECTED', balance_after = 0.00
+               WHERE id = ${failedTxId}
+            `;
+          }),
+        '23000',
+        'wager_tx_guard',
+      );
+
+      // 4. Voltar PENDING_REFERENCE para PENDING falha
       await expectPgError(
         () =>
           inTx(db.sql, async (tx) => {
@@ -1151,21 +1478,28 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
         'wager_tx_guard',
       );
 
-      // 3. Alterar coluna imutável (amount) em transação ainda não-terminal (PENDING_REFERENCE)
-      await expectPgError(
-        () =>
-          inTx(db.sql, async (tx) => {
-            await tx`
-              UPDATE wager_transaction
-                 SET amount = 20.00
-               WHERE id = ${pendingRefTxId}
-            `;
-          }),
-        '23000',
-        'wager_tx_guard',
-      );
+      // 5. Colunas de identidade imutáveis em transação não-terminal (PENDING_REFERENCE)
+      const identityMutations: Array<() => Promise<unknown>> = [
+        () => db.sql`UPDATE wager_transaction SET id = ${randomUUID()} WHERE id = ${pendingRefTxId}`,
+        () => db.sql`UPDATE wager_transaction SET wallet_id = ${otherWallet.id} WHERE id = ${pendingRefTxId}`,
+        () => db.sql`UPDATE wager_transaction SET player_id = ${randomUUID()} WHERE id = ${pendingRefTxId}`,
+        () => db.sql`UPDATE wager_transaction SET kind = 'ROLLBACK' WHERE id = ${pendingRefTxId}`,
+        () => db.sql`UPDATE wager_transaction SET amount = 20.00 WHERE id = ${pendingRefTxId}`,
+        () => db.sql`UPDATE wager_transaction SET currency = 'USD' WHERE id = ${pendingRefTxId}`,
+        () => db.sql`UPDATE wager_transaction SET provider_id = 'other-prov' WHERE id = ${pendingRefTxId}`,
+        () => db.sql`UPDATE wager_transaction SET external_transaction_id = 'other-ext' WHERE id = ${pendingRefTxId}`,
+        () => db.sql`UPDATE wager_transaction SET idempotency_key = 'other-key' WHERE id = ${pendingRefTxId}`,
+        () => db.sql`UPDATE wager_transaction SET payload_hash = ${VALID_HASH_A} WHERE id = ${pendingRefTxId}`,
+        () => db.sql`UPDATE wager_transaction SET round_id = 'other-round' WHERE id = ${pendingRefTxId}`,
+        () => db.sql`UPDATE wager_transaction SET game_id = 'other-game' WHERE id = ${pendingRefTxId}`,
+        () => db.sql`UPDATE wager_transaction SET reference_external_transaction_id = 'other-ref' WHERE id = ${pendingRefTxId}`,
+        () => db.sql`UPDATE wager_transaction SET created_at = now() - interval '1 day' WHERE id = ${pendingRefTxId}`,
+      ];
+      for (const mutate of identityMutations) {
+        await expectPgError(() => inTx(db.sql, async () => mutate()), '23000', 'wager_tx_guard');
+      }
 
-      // 4. DELETE em wager_transaction
+      // 6. DELETE em wager_transaction
       await expectPgError(
         () =>
           inTx(db.sql, async (tx) => {
@@ -1174,6 +1508,87 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
         '23000',
         'wager_tx_guard',
       );
+
+      // 7. Caminho válido de PENDING_REFERENCE (SCHEMA §3 e §9):
+      // 7a. PENDING_REFERENCE → PENDING_REFERENCE (novo agendamento de tentativa)
+      await inTx(db.sql, async (tx) => {
+        await tx`
+          UPDATE wager_transaction
+             SET reference_attempts = reference_attempts + 1,
+                 next_reference_attempt_at = now() + interval '5 seconds',
+                 updated_at = now()
+           WHERE id = ${pendingRefTxId}
+        `;
+      });
+
+      // 7b. PENDING_REFERENCE → REJECTED
+      await inTx(db.sql, async (tx) => {
+        await tx`
+          UPDATE wager_transaction
+             SET status = 'REJECTED',
+                 failure_code = 'REFERENCE_NOT_FOUND',
+                 balance_after = 0.00,
+                 next_reference_attempt_at = NULL,
+                 updated_at = now()
+           WHERE id = ${pendingRefTxId}
+        `;
+      });
+
+      // 7c. PENDING_REFERENCE → PROCESSED (quando a referência é resolvida)
+      const pendingToProcessedId = randomUUID();
+      await inTx(db.sql, async (tx) => {
+        await tx`
+          INSERT INTO wager_transaction (
+            id, wallet_id, player_id, kind, status, amount, currency,
+            provider_id, external_transaction_id, idempotency_key, payload_hash,
+            round_id, game_id, reference_external_transaction_id,
+            next_reference_attempt_at, created_at, updated_at
+          )
+          VALUES (
+            ${pendingToProcessedId}, ${wallet.id}, ${wallet.playerId}, 'LOSS', 'PENDING_REFERENCE', 0.00, 'BRL',
+            'prov', 'ext-pend-proc', 'prov:ext-pend-proc', ${VALID_HASH_A},
+            'r-1', 'g-1', 'ext-term-proc',
+            now(), now(), now()
+          )
+        `;
+        await tx`
+          UPDATE wager_transaction
+             SET status = 'PROCESSED',
+                 reference_transaction_id = ${baseLossTxId},
+                 balance_after = 0.00,
+                 processed_at = now(),
+                 next_reference_attempt_at = NULL,
+                 updated_at = now()
+           WHERE id = ${pendingToProcessedId}
+        `;
+      });
+
+      // 7d. PENDING_REFERENCE → FAILED
+      const pendingToFailedId = randomUUID();
+      await inTx(db.sql, async (tx) => {
+        await tx`
+          INSERT INTO wager_transaction (
+            id, wallet_id, player_id, kind, status, amount, currency,
+            provider_id, external_transaction_id, idempotency_key, payload_hash,
+            round_id, game_id, reference_external_transaction_id,
+            next_reference_attempt_at, created_at, updated_at
+          )
+          VALUES (
+            ${pendingToFailedId}, ${wallet.id}, ${wallet.playerId}, 'REFUND', 'PENDING_REFERENCE', 10.00, 'BRL',
+            'prov', 'ext-pend-fail', 'prov:ext-pend-fail', ${VALID_HASH_B},
+            'r-1', 'g-1', 'ext-missing-2',
+            now(), now(), now()
+          )
+        `;
+        await tx`
+          UPDATE wager_transaction
+             SET status = 'FAILED',
+                 failure_code = 'REFERENCE_NOT_FOUND',
+                 next_reference_attempt_at = NULL,
+                 updated_at = now()
+           WHERE id = ${pendingToFailedId}
+        `;
+      });
     });
   });
 
@@ -1506,34 +1921,34 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
         'ledger_chain',
       );
 
-      // 4. ledger_wallet_match: inserir lançamento sem atualizar a wallet falha no COMMIT
-      await expectPgError(
-        () =>
-          inTx(db.sql, async (tx) => {
-            const txId = randomUUID();
-            await tx`
-              INSERT INTO wager_transaction (
-                id, wallet_id, player_id, kind, status, amount, currency,
-                provider_id, external_transaction_id, idempotency_key, payload_hash,
-                round_id, game_id, balance_after, created_at, updated_at, processed_at
-              )
-              VALUES (
-                ${txId}, ${funded.walletId}, ${funded.playerId}, 'BET', 'PROCESSED', 20.00, 'BRL',
-                'prov', 'ext-lwm', 'prov:ext-lwm', ${VALID_HASH_A},
-                'r-1', 'g-1', 80.00, now(), now(), now()
-              )
-            `;
-            await tx`
-              INSERT INTO wallet_ledger_entry (
-                id, wallet_id, transaction_id, wallet_version, direction,
-                amount, currency, balance_before, balance_after, created_at
-              )
-              VALUES (
-                ${randomUUID()}, ${funded.walletId}, ${txId}, 2, 'DEBIT',
-                20.00, 'BRL', 100.00, 80.00, now()
-              )
-            `;
-          }),
+      // 4. ledger_wallet_match: inserir lançamento sem atualizar a wallet passa no INSERT e falha no COMMIT
+      await expectDeferredCommitError(
+        db.sql,
+        async (tx) => {
+          const txId = randomUUID();
+          await tx`
+            INSERT INTO wager_transaction (
+              id, wallet_id, player_id, kind, status, amount, currency,
+              provider_id, external_transaction_id, idempotency_key, payload_hash,
+              round_id, game_id, balance_after, created_at, updated_at, processed_at
+            )
+            VALUES (
+              ${txId}, ${funded.walletId}, ${funded.playerId}, 'BET', 'PROCESSED', 20.00, 'BRL',
+              'prov', 'ext-lwm', 'prov:ext-lwm', ${VALID_HASH_A},
+              'r-1', 'g-1', 80.00, now(), now(), now()
+            )
+          `;
+          await tx`
+            INSERT INTO wallet_ledger_entry (
+              id, wallet_id, transaction_id, wallet_version, direction,
+              amount, currency, balance_before, balance_after, created_at
+            )
+            VALUES (
+              ${randomUUID()}, ${funded.walletId}, ${txId}, 2, 'DEBIT',
+              20.00, 'BRL', 100.00, 80.00, now()
+            )
+          `;
+        },
         '23000',
         'ledger_wallet_match',
       );
@@ -1573,8 +1988,8 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
     });
   });
 
-  describe('inbox_message, outbox_message e Locks por wallet (SCHEMA 2.4, 2.5, 4.1, 9)', () => {
-    test('inbox_message PK duplicada (23505) e outbox_attempts_ck (23514)', async () => {
+  describe('inbox_message, outbox_message, Filas SQS de teste e Locks por wallet (SCHEMA 2.4, 2.5, 4.1, 9; TESTES D35)', () => {
+    test('inbox_message PK duplicada (23505 inbox_message_pkey) e outbox_attempts_ck (23514)', async () => {
       await inTx(db.sql, async (tx) => {
         await tx`
           INSERT INTO inbox_message (consumer_name, message_id, payload_hash, received_at)
@@ -1591,6 +2006,7 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
             `;
           }),
         '23505',
+        'inbox_message_pkey',
       );
 
       await expectPgError(
@@ -1610,7 +2026,52 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
       );
     });
 
-    test('locks: 2 conexões na mesma wallet bloqueiam, em wallets diferentes não bloqueiam, e lock_timeout estoura com 55P03', async () => {
+    test('createTestQueues / deleteTestQueues: cria 3 filas FIFO isoladas com RedrivePolicy (maxReceiveCount=5) e VisibilityTimeout=30 e remove no fim (D35)', async () => {
+      const queues = await createTestQueues();
+      try {
+        expect(queues.input).toBe(`${queues.prefix}-wager-transactions.fifo`);
+        expect(queues.dlq).toBe(`${queues.prefix}-wager-transactions-dlq.fifo`);
+        expect(queues.events).toBe(`${queues.prefix}-wagering-events.fifo`);
+
+        const [inputAttrs, dlqAttrs, eventsAttrs] = await Promise.all([
+          queues.sqs.send(
+            new GetQueueAttributesCommand({
+              QueueUrl: queues.inputUrl,
+              AttributeNames: ['All'],
+            }),
+          ),
+          queues.sqs.send(
+            new GetQueueAttributesCommand({
+              QueueUrl: queues.dlqUrl,
+              AttributeNames: ['All'],
+            }),
+          ),
+          queues.sqs.send(
+            new GetQueueAttributesCommand({
+              QueueUrl: queues.eventsUrl,
+              AttributeNames: ['All'],
+            }),
+          ),
+        ]);
+
+        expect(inputAttrs.Attributes?.FifoQueue).toBe('true');
+        expect(inputAttrs.Attributes?.ContentBasedDeduplication).toBe('true');
+        expect(inputAttrs.Attributes?.VisibilityTimeout).toBe('30');
+        const redrive = JSON.parse(inputAttrs.Attributes?.RedrivePolicy ?? '{}') as {
+          deadLetterTargetArn?: string;
+          maxReceiveCount?: string | number;
+        };
+        expect(redrive.deadLetterTargetArn).toBe(dlqAttrs.Attributes?.QueueArn);
+        expect(String(redrive.maxReceiveCount)).toBe('5');
+
+        expect(eventsAttrs.Attributes?.FifoQueue).toBe('true');
+        expect(eventsAttrs.Attributes?.ContentBasedDeduplication).toBe('false');
+      } finally {
+        await deleteTestQueues(queues);
+      }
+    });
+
+    test('locks: 2 conexões na mesma wallet bloqueiam, em wallets diferentes não bloqueiam, e lock_timeout de 2 s (D21) estoura com 55P03', async () => {
       const walletA = await insertZeroWallet(db.sql);
       const walletB = await insertZeroWallet(db.sql);
 
@@ -1656,18 +2117,21 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
         expect(conn2Resolved).toBe(true);
         await conn2.unsafe('COMMIT');
 
-        // 3. lock_timeout (D21): conn1 segura walletA, conn2 com lock_timeout curto falha com 55P03
+        // 3. lock_timeout = '2s' (D21, SCHEMA §9): conn1 segura walletA, conn2 falha com 55P03 em ~2 s
         await conn1.unsafe('BEGIN');
         await conn1`SELECT id FROM wallet WHERE id = ${walletA.id} FOR UPDATE`;
 
+        const startedAt = Date.now();
         await expectPgError(
           () =>
             inTx(conn2, async (tx) => {
-              await tx.unsafe("SET LOCAL lock_timeout = '200ms'");
+              await tx.unsafe("SET LOCAL lock_timeout = '2s'");
               await tx`SELECT id FROM wallet WHERE id = ${walletA.id} FOR UPDATE`;
             }),
           '55P03',
         );
+        const elapsedMs = Date.now() - startedAt;
+        expect(elapsedMs).toBeGreaterThanOrEqual(1_800);
       } finally {
         try {
           await conn1.unsafe('ROLLBACK');
