@@ -11,7 +11,7 @@ import {
 } from './preload';
 
 export interface CreateTestDatabaseOptions {
-  /** Se `true` (padrão), clona de `wagering_template`. Se `false` (I-01), cria banco vazio. */
+  /** Se `true` (padrão), clona de `wagering_template_<hash>` (D34, D60). Se `false` (I-01), cria banco vazio. */
   fromTemplate?: boolean;
 }
 
@@ -20,9 +20,9 @@ export interface TestDatabase {
   readonly sql: SQL;
   /** Abre uma conexão independente para `name` (ex.: testar locks concorrentes), fechada no `drop()`. */
   connect(): Promise<SQL>;
-  /** Roda `orm.getMigrator().up()` contra este banco. */
+  /** Roda `orm.migrator.up()` contra este banco. */
   migrateUp(): Promise<void>;
-  /** Roda `orm.getMigrator().down({ to: 0 })` contra este banco. */
+  /** Roda `orm.migrator.down({ to: 0 })` contra este banco. */
   migrateDownToZero(): Promise<void>;
   /** Limpa dados das tabelas existentes usando `session_replication_role = replica` (SCHEMA §3). */
   reset(): Promise<void>;
@@ -55,7 +55,7 @@ async function withCreateDbLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Cria um banco PostgreSQL isolado para um arquivo de teste (TESTES D34, §3.1).
+ * Cria um banco PostgreSQL isolado para um arquivo de teste (TESTES D34, D60, §3.1).
  * Nunca usa o banco `wagering`.
  */
 export async function createTestDatabase(
@@ -104,9 +104,7 @@ export async function createTestDatabase(
 
     async migrateUp(): Promise<void> {
       if (!hasMigrationFiles()) {
-        throw new Error(
-          `Nenhuma migration encontrada em ${MIGRATIONS_DIR} (aguardando entrega da T14).`,
-        );
+        throw new Error(`Nenhuma migration encontrada em ${MIGRATIONS_DIR}.`);
       }
       const orm = await createMigratorOrm(dbName);
       try {
@@ -118,9 +116,7 @@ export async function createTestDatabase(
 
     async migrateDownToZero(): Promise<void> {
       if (!hasMigrationFiles()) {
-        throw new Error(
-          `Nenhuma migration encontrada em ${MIGRATIONS_DIR} (aguardando entrega da T14).`,
-        );
+        throw new Error(`Nenhuma migration encontrada em ${MIGRATIONS_DIR}.`);
       }
       const orm = await createMigratorOrm(dbName);
       try {
@@ -182,7 +178,12 @@ export async function dropTestDatabase(dbOrName: TestDatabase | string): Promise
     await dbOrName.drop();
     return;
   }
-  if (dbOrName === 'wagering' || dbOrName === 'postgres' || dbOrName === TEMPLATE_DB_NAME) {
+  if (
+    dbOrName === 'wagering' ||
+    dbOrName === 'postgres' ||
+    dbOrName === TEMPLATE_DB_NAME ||
+    dbOrName.startsWith('wagering_template')
+  ) {
     throw new Error(`Proibido remover banco compartilhado: ${dbOrName}`);
   }
   const adminSql = new SQL({ url: buildPostgresUrl('postgres'), max: 1 });

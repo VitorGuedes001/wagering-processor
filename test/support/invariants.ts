@@ -9,7 +9,9 @@ function getSql(dbOrSql: TestDatabase | SQL): SQL {
  * Invariante final de todos os testes de integração e concorrência (TESTES D40, §3.5).
  * Roda em SQL puro, independente do código da aplicação:
  *   1. para cada wallet, `balance = Σ(CREDIT) - Σ(DEBIT)` do ledger;
- *   2. a cadeia `balance_before = lag(balance_after)` não tem buraco e `wallet_version` é 1..N;
+ *   2. a cadeia `balance_before = lag(balance_after)` (ou 0 no primeiro lançamento) não tem buraco
+ *      e `wallet_version` é estritamente crescente (sem exigir contiguidade 1..N, pois wallet aberta
+ *      com saldo zero tem `version = 1` sem lançamento e recebe o 1º lançamento em `wallet_version = 2`);
  *   3. o último `wallet_version` do ledger é igual a `wallet.version`, salvo wallet nova com saldo zero;
  *   4. nenhuma transação `REFUND`/`ROLLBACK` `PROCESSED` duplicada por referência;
  *   5. toda transação `PROCESSED` que move saldo (`kind <> 'LOSS'`) tem exatamente 1 lançamento,
@@ -44,13 +46,13 @@ export async function assertAllWalletsConsistent(dbOrSql: TestDatabase | SQL): P
     );
   }
 
-  // 2. Cadeia sem buraco: balance_before = lag(balance_after, 0) e wallet_version sequencial 1..N
+  // 2. Cadeia sem buraco: balance_before = lag(balance_after, 0) e wallet_version estritamente crescente
   const chainGaps = await sql<
     Array<{
       wallet_id: string;
       entry_id: string;
       wallet_version: number;
-      expected_version: number;
+      prev_version: number | null;
       balance_before: string;
       expected_before: string;
       balance_after: string;
@@ -61,10 +63,16 @@ export async function assertAllWalletsConsistent(dbOrSql: TestDatabase | SQL): P
         id::text AS entry_id,
         wallet_id::text AS wallet_id,
         wallet_version,
-        ROW_NUMBER() OVER (PARTITION BY wallet_id ORDER BY wallet_version)::int AS expected_version,
+        LAG(wallet_version) OVER (
+          PARTITION BY wallet_id
+          ORDER BY created_at ASC, wallet_version ASC, id ASC
+        )::int AS prev_version,
         balance_before,
         COALESCE(
-          LAG(balance_after) OVER (PARTITION BY wallet_id ORDER BY wallet_version),
+          LAG(balance_after) OVER (
+            PARTITION BY wallet_id
+            ORDER BY wallet_version ASC, created_at ASC, id ASC
+          ),
           0.00
         )::numeric(19,2) AS expected_before,
         balance_after,
@@ -76,13 +84,14 @@ export async function assertAllWalletsConsistent(dbOrSql: TestDatabase | SQL): P
       wallet_id,
       entry_id,
       wallet_version,
-      expected_version,
+      prev_version,
       balance_before::text AS balance_before,
       expected_before::text AS expected_before,
       balance_after::text AS balance_after
     FROM ordered
-    WHERE balance_before <> expected_before
-       OR wallet_version <> expected_version
+    WHERE wallet_version < 1
+       OR (prev_version IS NOT NULL AND wallet_version <= prev_version)
+       OR balance_before <> expected_before
        OR balance_after <> (balance_before + CASE direction WHEN 'CREDIT' THEN amount ELSE -amount END)
   `;
   if (chainGaps.length > 0) {

@@ -16,7 +16,7 @@ export const CHALLENGE_WALLET_RESPONSE_FIXTURE = {
   version: 1,
 } as const;
 
-/** Fixture literal de submissão HTTP em CHALLENGE.md §9. */
+/** Fixture literal de submissão HTTP em CHALLENGE.md §9 (TESTES §5: JSON literal independente do enum). */
 export const CHALLENGE_WAGER_FIXTURE = {
   providerId: 'provider-a',
   externalTransactionId: 'transaction-123',
@@ -24,11 +24,11 @@ export const CHALLENGE_WAGER_FIXTURE = {
   walletId: '0192f291-27dd-7d3f-8071-5f8685deef37',
   roundId: 'round-987',
   gameId: 'fortune-chimp',
-  kind: WagerTransactionKind.Bet,
+  kind: 'BET',
   money: { amount: '25.00', currency: 'BRL' },
 } as const;
 
-/** Fixture literal de mensagem SQS em CHALLENGE.md §10. */
+/** Fixture literal de mensagem SQS em CHALLENGE.md §10 (TESTES §5: JSON literal independente do enum). */
 export const CHALLENGE_SQS_MESSAGE_FIXTURE = {
   messageId: 'msg-123',
   type: 'WagerTransactionRequested',
@@ -41,7 +41,7 @@ export const CHALLENGE_SQS_MESSAGE_FIXTURE = {
     walletId: '0192f291-27dd-7d3f-8071-5f8685deef37',
     roundId: 'round-987',
     gameId: 'fortune-chimp',
-    kind: WagerTransactionKind.Bet,
+    kind: 'BET',
     money: { amount: '25.00', currency: 'BRL' },
   },
 } as const;

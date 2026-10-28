@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ListQueuesCommand, SQSClient } from '@aws-sdk/client-sqs';
@@ -6,8 +7,11 @@ import { Migrator } from '@mikro-orm/migrations';
 import { defineConfig, MikroORM } from '@mikro-orm/postgresql';
 import { SQL } from 'bun';
 
-export const TEMPLATE_DB_NAME = 'wagering_template';
-export const MIGRATIONS_DIR = resolve(import.meta.dir, '../../migrations');
+export const WORKTREE_ROOT = resolve(import.meta.dir, '../..');
+export const WORKTREE_HASH = createHash('sha256').update(WORKTREE_ROOT).digest('hex').slice(0, 8);
+/** Nome do banco template isolado por worktree (TESTES D34, D60). */
+export const TEMPLATE_DB_NAME = `wagering_template_${WORKTREE_HASH}`;
+export const MIGRATIONS_DIR = resolve(WORKTREE_ROOT, 'migrations');
 
 export interface TestInfraConfig {
   dbHost: string;
@@ -142,9 +146,9 @@ export async function checkInfrastructure(): Promise<void> {
 let templatePromise: Promise<void> | undefined;
 
 /**
- * Cria/atualiza o banco `wagering_template` uma vez por processo (TESTES D34, §3.1).
- * Aplica as migrations se `./migrations` existir e fecha todas as conexões no template
- * para permitir `CREATE DATABASE ... TEMPLATE wagering_template`.
+ * Cria/atualiza o banco `wagering_template_<hash>` do worktree atual uma vez por processo
+ * (TESTES D34, D60, §3.1). Aplica as migrations e fecha todas as conexões no template
+ * para permitir `CREATE DATABASE ... TEMPLATE wagering_template_<hash>`.
  */
 export async function ensureTemplateDatabase(): Promise<void> {
   if (templatePromise) return templatePromise;
@@ -171,7 +175,7 @@ export async function ensureTemplateDatabase(): Promise<void> {
         }
       }
 
-      // Garante zero sessões ativas no wagering_template antes do CREATE DATABASE ... TEMPLATE
+      // Garante zero sessões ativas no template antes do CREATE DATABASE ... TEMPLATE
       await adminSql.unsafe(`
         SELECT pg_terminate_backend(pid)
         FROM pg_stat_activity

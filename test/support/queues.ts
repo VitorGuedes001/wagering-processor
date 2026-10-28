@@ -19,6 +19,20 @@ export interface TestQueues {
   delete(): Promise<void>;
 }
 
+function isNonExistentQueueError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const name = 'name' in err && typeof err.name === 'string' ? err.name : '';
+  const code = 'Code' in err && typeof err.Code === 'string' ? err.Code : '';
+  const msg = 'message' in err && typeof err.message === 'string' ? err.message : '';
+  return (
+    name.includes('QueueDoesNotExist') ||
+    name.includes('NonExistentQueue') ||
+    code.includes('NonExistentQueue') ||
+    msg.includes('NonExistentQueue') ||
+    msg.includes('QueueDoesNotExist')
+  );
+}
+
 /**
  * Cria as 3 filas FIFO isoladas por arquivo de teste no LocalStack (TESTES D35, §3.2)
  * com os mesmos atributos e redrive policy de `docker/localstack/init-queues.sh`.
@@ -46,95 +60,116 @@ export async function createTestQueues(customPrefix?: string): Promise<TestQueue
     },
   });
 
-  // 1. DLQ primeiro (a fila de entrada precisa do ARN dela na redrive policy)
-  const dlqRes = await sqs.send(
-    new CreateQueueCommand({
-      QueueName: dlqName,
-      Attributes: {
-        FifoQueue: 'true',
-        ContentBasedDeduplication: 'true',
+  const createdUrls: string[] = [];
+
+  try {
+    // 1. DLQ primeiro (a fila de entrada precisa do ARN dela na redrive policy)
+    const dlqRes = await sqs.send(
+      new CreateQueueCommand({
+        QueueName: dlqName,
+        Attributes: {
+          FifoQueue: 'true',
+          ContentBasedDeduplication: 'true',
+        },
+      }),
+    );
+    const dlqUrl = dlqRes.QueueUrl;
+    if (!dlqUrl) {
+      throw new Error(`Falha ao criar fila DLQ de teste: ${dlqName}`);
+    }
+    createdUrls.push(dlqUrl);
+
+    const dlqAttrs = await sqs.send(
+      new GetQueueAttributesCommand({
+        QueueUrl: dlqUrl,
+        AttributeNames: ['QueueArn'],
+      }),
+    );
+    const dlqArn = dlqAttrs.Attributes?.QueueArn;
+    if (!dlqArn) {
+      throw new Error(`Não foi possível obter QueueArn da DLQ: ${dlqName}`);
+    }
+
+    // 2. Fila de entrada com VisibilityTimeout=30 e RedrivePolicy maxReceiveCount=5
+    const inputRes = await sqs.send(
+      new CreateQueueCommand({
+        QueueName: inputName,
+        Attributes: {
+          FifoQueue: 'true',
+          ContentBasedDeduplication: 'true',
+          VisibilityTimeout: '30',
+          RedrivePolicy: JSON.stringify({
+            deadLetterTargetArn: dlqArn,
+            maxReceiveCount: '5',
+          }),
+        },
+      }),
+    );
+    const inputUrl = inputRes.QueueUrl;
+    if (!inputUrl) {
+      throw new Error(`Falha ao criar fila de entrada de teste: ${inputName}`);
+    }
+    createdUrls.push(inputUrl);
+
+    // 3. Fila de saída de eventos (ContentBasedDeduplication=false; dedup por eventId)
+    const eventsRes = await sqs.send(
+      new CreateQueueCommand({
+        QueueName: eventsName,
+        Attributes: {
+          FifoQueue: 'true',
+          ContentBasedDeduplication: 'false',
+        },
+      }),
+    );
+    const eventsUrl = eventsRes.QueueUrl;
+    if (!eventsUrl) {
+      throw new Error(`Falha ao criar fila de eventos de teste: ${eventsName}`);
+    }
+    createdUrls.push(eventsUrl);
+
+    let deleted = false;
+
+    const queues: TestQueues = {
+      prefix,
+      input: inputName,
+      dlq: dlqName,
+      events: eventsName,
+      inputUrl,
+      dlqUrl,
+      eventsUrl,
+      sqs,
+      async delete(): Promise<void> {
+        if (deleted) return;
+        deleted = true;
+        const results = await Promise.allSettled(
+          [inputUrl, dlqUrl, eventsUrl].map((url) =>
+            sqs.send(new DeleteQueueCommand({ QueueUrl: url })),
+          ),
+        );
+        sqs.destroy();
+
+        const failures = results.filter(
+          (r): r is PromiseRejectedResult => r.status === 'rejected' && !isNonExistentQueueError(r.reason),
+        );
+        if (failures.length > 0) {
+          throw new Error(
+            `Falha ao remover filas de teste (${prefix}): ${failures
+              .map((f) => (f.reason instanceof Error ? f.reason.message : String(f.reason)))
+              .join('; ')}`,
+          );
+        }
       },
-    }),
-  );
-  const dlqUrl = dlqRes.QueueUrl;
-  if (!dlqUrl) {
+    };
+
+    return queues;
+  } catch (err) {
+    // Limpa filas parcialmente criadas antes de propagar a falha
+    await Promise.allSettled(
+      createdUrls.map((url) => sqs.send(new DeleteQueueCommand({ QueueUrl: url }))),
+    );
     sqs.destroy();
-    throw new Error(`Falha ao criar fila DLQ de teste: ${dlqName}`);
+    throw err;
   }
-
-  const dlqAttrs = await sqs.send(
-    new GetQueueAttributesCommand({
-      QueueUrl: dlqUrl,
-      AttributeNames: ['QueueArn'],
-    }),
-  );
-  const dlqArn = dlqAttrs.Attributes?.QueueArn;
-  if (!dlqArn) {
-    sqs.destroy();
-    throw new Error(`Não foi possível obter QueueArn da DLQ: ${dlqName}`);
-  }
-
-  // 2. Fila de entrada com VisibilityTimeout=30 e RedrivePolicy maxReceiveCount=5
-  const inputRes = await sqs.send(
-    new CreateQueueCommand({
-      QueueName: inputName,
-      Attributes: {
-        FifoQueue: 'true',
-        ContentBasedDeduplication: 'true',
-        VisibilityTimeout: '30',
-        RedrivePolicy: JSON.stringify({
-          deadLetterTargetArn: dlqArn,
-          maxReceiveCount: '5',
-        }),
-      },
-    }),
-  );
-  const inputUrl = inputRes.QueueUrl;
-  if (!inputUrl) {
-    sqs.destroy();
-    throw new Error(`Falha ao criar fila de entrada de teste: ${inputName}`);
-  }
-
-  // 3. Fila de saída de eventos (ContentBasedDeduplication=false; dedup por eventId)
-  const eventsRes = await sqs.send(
-    new CreateQueueCommand({
-      QueueName: eventsName,
-      Attributes: {
-        FifoQueue: 'true',
-        ContentBasedDeduplication: 'false',
-      },
-    }),
-  );
-  const eventsUrl = eventsRes.QueueUrl;
-  if (!eventsUrl) {
-    sqs.destroy();
-    throw new Error(`Falha ao criar fila de eventos de teste: ${eventsName}`);
-  }
-
-  let deleted = false;
-
-  const queues: TestQueues = {
-    prefix,
-    input: inputName,
-    dlq: dlqName,
-    events: eventsName,
-    inputUrl,
-    dlqUrl,
-    eventsUrl,
-    sqs,
-    async delete(): Promise<void> {
-      if (deleted) return;
-      deleted = true;
-      await Promise.allSettled([
-        sqs.send(new DeleteQueueCommand({ QueueUrl: inputUrl })),
-        sqs.send(new DeleteQueueCommand({ QueueUrl: dlqUrl })),
-        sqs.send(new DeleteQueueCommand({ QueueUrl: eventsUrl })),
-      ]);
-      sqs.destroy();
-    },
-  };
-
-  return queues;
 }
 
 export async function deleteTestQueues(queues: TestQueues): Promise<void> {
