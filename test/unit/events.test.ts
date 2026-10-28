@@ -305,6 +305,14 @@ describe('IntegrationEvent & Subclasses (U-03, U-04)', () => {
     expect(json.data.balanceAfter).not.toBeInstanceOf(Money);
   });
 
+  it('WalletBalanceChanged.from throws when the ledger entry belongs to another wallet', () => {
+    const wallet = makeWallet({ id: 'wallet-1' });
+    const entry = makeLedgerEntry({ walletId: 'wallet-2' });
+    expect(() => WalletBalanceChanged.from(wallet, entry, baseCtx)).toThrow(
+      InvalidTransactionStateError,
+    );
+  });
+
   it('WalletBalanceChanged.from mirrors the entry produced by Wallet.open and Wallet.debit', () => {
     const at = new Date('2026-04-19T12:00:00.000Z');
     const { wallet, openingEntry } = Wallet.open({

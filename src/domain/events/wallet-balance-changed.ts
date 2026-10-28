@@ -1,3 +1,4 @@
+import { InvalidTransactionStateError } from '../errors';
 import type { MoneyProps } from '../money';
 import type { Wallet } from '../wallet';
 import type { LedgerDirection, WalletLedgerEntry } from '../wallet-ledger-entry';
@@ -24,6 +25,13 @@ export class WalletBalanceChanged extends IntegrationEvent<WalletBalanceChangedD
   }
 
   static from(wallet: Wallet, entry: WalletLedgerEntry, ctx: EventContext): WalletBalanceChanged {
+    // Par trocado no use case é bug (MODELAGEM 10.4), não um evento de outra wallet.
+    if (entry.walletId !== wallet.id) {
+      throw new InvalidTransactionStateError(
+        `Ledger entry ${entry.id} belongs to wallet ${entry.walletId}, not ${wallet.id}`,
+      );
+    }
+
     return new WalletBalanceChanged({
       eventId: ctx.eventId,
       aggregateId: wallet.id,
