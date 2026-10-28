@@ -59,4 +59,9 @@ GET /health/ready
 - [docs/CHALLENGE.md](docs/CHALLENGE.md): enunciado do desafio
 - [SETUP.md](SETUP.md): passo 1, validação do ambiente
 - [docs/REAPROVEITAMENTO.md](docs/REAPROVEITAMENTO.md): o que vem do enunciado para o código
+- [docs/MODELAGEM.md](docs/MODELAGEM.md): entidades, invariantes, transições e códigos de falha
+- [docs/SCHEMA.md](docs/SCHEMA.md): tabelas, constraints, triggers e estratégia de concorrência
+- [docs/ARQUITETURA.md](docs/ARQUITETURA.md): camadas, portas, use cases, contrato HTTP, mensageria e observabilidade
+- [docs/TESTES.md](docs/TESTES.md): plano de testes e infraestrutura de concorrência
+- [docs/PLANO.md](docs/PLANO.md): blocos de implementação com timebox e cortes por orçamento
 - `ARCHITECTURE.md`: decisões e trade-offs (a criar)
