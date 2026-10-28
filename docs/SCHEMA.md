@@ -215,7 +215,16 @@ em trigger.
 | `wallet_version_rule` | `wallet` | `BEFORE UPDATE` | saldo mudou ⇒ `version = OLD.version + 1`. Saldo igual ⇒ `version` igual. `id`, `player_id`, `currency` e `created_at` não mudam |
 | `wallet_ledger_match` | `wallet` | `AFTER INSERT OR UPDATE`, **constraint trigger `DEFERRABLE INITIALLY DEFERRED`** | no commit, existe lançamento com `wallet_version = version` e `balance_after = balance`, salvo wallet nova com saldo zero |
 | `wallet_no_delete` | `wallet` | `BEFORE DELETE` | wallet não é apagada |
-| `wager_tx_guard` | `wager_transaction` | `BEFORE UPDATE OR DELETE` | status terminal não muda. `PENDING_REFERENCE` só vai para ela mesma ou terminal. Colunas de identidade (ids, kind, valor, moeda, hash, key) não mudam. Sem `DELETE` |
+| `wager_tx_guard` | `wager_transaction` | `BEFORE UPDATE OR DELETE` | status terminal não muda. `PENDING_REFERENCE` só vai para ela mesma ou terminal. Colunas de identidade (ids, kind, valor, moeda, hash, key) não mudam. Sem `DELETE`. Linha terminal congelada inteira (D52) |
+| `ledger_wallet_match` (D53) | `wallet_ledger_entry` | `AFTER INSERT`, **constraint trigger `DEFERRABLE INITIALLY DEFERRED`** | no commit, o **último** lançamento da wallet tem `wallet_version = version` e `balance_after = balance` da wallet. Barra lançamento inserido sem a wallet ser atualizada |
+
+Decisões da T14 (migrations), aprovadas em 28/10/2026 — `docs/notas/T14-migrations.md`:
+
+| # | Decisão | Por quê |
+|---|---|---|
+| D51 | Todo trigger lança SQLSTATE `23000` (`integrity_constraint_violation`) com o nome do trigger no campo `CONSTRAINT` do erro | Classe 23 é violação de integridade. O nome permite ao teste (I-02) e ao log saber qual garantia disparou. Na aplicação, continua bug (§5) |
+| D52 | `wager_tx_guard` congela a linha inteira de uma transação terminal, não só o `status` | Nenhum método de MODELAGEM 4 mexe em transação terminal. Deixar `balance_after`, `failure_code` ou `reference_transaction_id` editáveis permitiria reescrever o histórico |
+| D53 | 8º trigger, `ledger_wallet_match`, e as duas checagens de casamento usam o **último** lançamento, não "existe um" | `wallet_ledger_match` só dispara quando a wallet muda. Sem o 8º, um lançamento inserido sem atualizar a wallet passaria no commit |
 
 `wallet_ledger_match` é deferred porque a ordem dentro da transação é: atualizar
 a wallet e depois inserir o lançamento (ou o inverso). A checagem só faz sentido
