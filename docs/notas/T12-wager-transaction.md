@@ -1,7 +1,8 @@
 # T12 — WagerTransaction 🔒
 
-> Estado: Implementada (gate vermelho só porque a T10 não está na `main`; ver
-> "Como verificar") · Raia: C · Revisor: G · Branch: `t12-wager-transaction`
+> Estado: Testada (gate vermelho só porque a T10 não está na `main`; o humano
+> liberou a revisão assim em 28/10/2026, ver "Como verificar") · Raia: C ·
+> Revisor: G · Branch: `t12-wager-transaction`
 
 ## O que muda
 
