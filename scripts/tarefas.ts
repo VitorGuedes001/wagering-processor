@@ -76,6 +76,11 @@ function missingDeps(task: Task, byId: Map<string, Task>): string[] {
   return task.deps.filter((dep) => byId.get(dep)?.state !== 'Entregue');
 }
 
+/** `t10-money` ou `usuario/t10-money-abc` (branch de sessão do Claude desktop) → `"10"`. */
+function taskIdOf(branch: string): string | undefined {
+  return /(?:^|\/)t(\d{2})-/.exec(branch)?.[1];
+}
+
 function label(task: Task): string {
   return `${task.id} ${task.title}${task.locked ? ' 🔒' : ''}`;
 }
@@ -120,9 +125,11 @@ function status(): void {
       alerts.push(`${t.id} está Entregue no quadro, mas a branch ${t.branch} não está na main`);
     }
   }
+  const localBranches = git(['branch', '--format=%(refname:short)']).out.split('\n');
   for (const t of tasks.filter((x) => x.state !== 'Proposta' && x.state !== 'Entregue')) {
-    if (t.branch !== '—' && !git(['rev-parse', '--verify', '--quiet', t.branch]).ok) {
-      alerts.push(`${t.id} está ${t.state}, mas a branch ${t.branch} não existe`);
+    const hasBranch = localBranches.some((b) => taskIdOf(b) === t.id.slice(1));
+    if (t.branch !== '—' && !hasBranch) {
+      alerts.push(`${t.id} está ${t.state}, mas nenhuma branch t${t.id.slice(1)}-… existe`);
     }
   }
   if (alerts.length > 0) console.log(`\nAlertas:\n  ${alerts.join('\n  ')}`);
@@ -169,8 +176,11 @@ function start(id: string | undefined, here: boolean): void {
     if (current === 'main') fail('você está na main. Use um worktree próprio ou rode sem --aqui');
     root = git(['rev-parse', '--show-toplevel']).out;
     console.log(`Usando o worktree atual (${root}), branch ${current}.`);
+    if (taskIdOf(current) !== id.slice(1)) {
+      fail(`a branch atual (${current}) não é da ${id}: o nome precisa conter ${task.branch.slice(0, 4)}`);
+    }
     if (current !== task.branch) {
-      console.log(`  Aviso: o quadro espera a branch ${task.branch}. Renomeie: git branch -m ${task.branch}`);
+      console.log(`  Branch criada pelo app (${current}), em vez de ${task.branch}: ok, não renomeie.`);
     }
   } else {
     // A raiz do repositório principal, mesmo se este comando rodar dentro de um worktree.
@@ -262,7 +272,7 @@ function gate(all: boolean): void {
   }
 
   if (branch !== 'main') {
-    const id = /^t(\d{2})-/.exec(branch)?.[1];
+    const id = taskIdOf(branch);
     const noteDir = join(CWD, 'docs', 'notas');
     const hasNote = id !== undefined && existsSync(noteDir) && readdirSync(noteDir).some((f) => f.startsWith(`T${id}-`));
     if (!hasNote) results.push(['nota da tarefa', false]);
