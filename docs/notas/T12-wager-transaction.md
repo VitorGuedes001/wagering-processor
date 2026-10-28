@@ -1,6 +1,6 @@
 # T12 — WagerTransaction 🔒
 
-> Estado: Abordagem · Raia: C · Revisor: G · Branch: `t12-wager-transaction`
+> Estado: Implementada · Raia: C · Revisor: G · Branch: `t12-wager-transaction`
 
 ## O que muda
 
@@ -133,7 +133,8 @@ com "Não implementado: T10" e ficam verdes depois do merge dela.
   10.4 é fechada; `InvalidTransactionStateError` é a que significa "bug do chamador".
 - **`Money` falso nos testes**: proibido pelo briefing; usa o `Money` real da T10.
 
-**Aprovação do humano:** pendente
+**Aprovação do humano:** aprovada em 28/10/2026, com as propostas das decisões
+pendentes 1, 2 e 3. A 4 fica registrada para a T16.
 
 ## Ordem de leitura do diff
 
@@ -146,6 +147,9 @@ bun run tarefa:gate
 ```
 
 ## Decisões pendentes
+
+Todas resolvidas pelo humano em 28/10/2026: 1, 2 e 3 como propostas. A 4 fica
+registrada para a T16.
 
 1. **Erro de `opening` com `money` zero.** 4.2 diz `OPENING > 0`, mas não diz o
    erro; `CreateWallet` nem chama `opening` com saldo zero (MODELAGEM 3).
