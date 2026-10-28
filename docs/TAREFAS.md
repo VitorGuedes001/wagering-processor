@@ -23,7 +23,7 @@ a do worktree.
 | T13 Inbox, Outbox e eventos | 1 | G | T01 | Testada | t13-inbox-outbox | C | — |
 | T14 Migrations e triggers 🔒 | 1 | C | T01 | Entregue | t14-migrations | G | notas/T14-migrations.md |
 | T15 Infra de teste e testes de schema | 1 | G | T01 | Implementada | t15-test-infra | C | — |
-| T16 decideWager e reconcile 🔒 | 1 | G | T10, T11, T12 | Proposta | t16-decide-wager | C | — |
+| T16 decideWager e reconcile 🔒 | 1 | G | T10, T11, T12 | Abordagem | t16-decide-wager | C | — |
 | T20 Unit of Work, wallet e ledger 🔒 | 2 | C | T10, T11, T14, T15 | Proposta | t20-unit-of-work | G | — |
 | T21 Repositório de transações | 2 | G | T12, T14, T15 | Proposta | t21-transaction-repo | C | — |
 | T22 Repositórios de inbox e outbox | 2 | G | T13, T14, T15 | Proposta | t22-inbox-outbox-repo | C | — |
