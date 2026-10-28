@@ -6,7 +6,7 @@ import { WagerTransactionProcessed } from '../../src/domain/events/wager-transac
 import { WagerTransactionRejected } from '../../src/domain/events/wager-transaction-rejected';
 import { WalletBalanceChanged } from '../../src/domain/events/wallet-balance-changed';
 import { FailureCode } from '../../src/domain/failure-code';
-import { Money, type MoneyProps } from '../../src/domain/money';
+import { Money } from '../../src/domain/money';
 import { OutboxMessage } from '../../src/domain/outbox-message';
 import {
   WagerTransaction,
@@ -21,19 +21,9 @@ import {
   WalletLedgerEntry,
 } from '../../src/domain/wallet-ledger-entry';
 
+/** `Money` real (T10): sem fallback, para um bug do `Money` não passar calado aqui. */
 function makeMoney(amount: string, currency = 'BRL'): Money {
-  try {
-    const m = Money.from({ amount, currency });
-    m.toJSON();
-    return m;
-  } catch {
-    const cents = BigInt(amount.replace('.', ''));
-    const instance = Reflect.construct(Money, [cents, currency]) as Money;
-    Object.defineProperty(instance, 'toJSON', {
-      value: (): MoneyProps => ({ amount, currency }),
-    });
-    return instance;
-  }
+  return Money.from({ amount, currency });
 }
 
 function makeWallet(overrides: Partial<WalletState> = {}): Wallet {
