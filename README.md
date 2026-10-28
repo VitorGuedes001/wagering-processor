@@ -64,4 +64,5 @@ GET /health/ready
 - [docs/ARQUITETURA.md](docs/ARQUITETURA.md): camadas, portas, use cases, contrato HTTP, mensageria e observabilidade
 - [docs/TESTES.md](docs/TESTES.md): plano de testes e infraestrutura de concorrência
 - [docs/PLANO.md](docs/PLANO.md): blocos de implementação com timebox e cortes por orçamento
+- [docs/EXECUCAO.md](docs/EXECUCAO.md): execução com agentes em paralelo, revisão humana e marcos
 - `ARCHITECTURE.md`: decisões e trade-offs (a criar)

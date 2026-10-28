@@ -1,5 +1,9 @@
 # Passo 8 — Plano de trabalho com timebox
 
+> A execução com agentes em paralelo reorganiza estes blocos em ondas e tarefas
+> (`T00`–`T51`), com marcos `M0`–`M8`: ver [EXECUCAO.md](EXECUCAO.md). Escopo,
+> orçamento e ordem de corte continuam valendo daqui.
+
 Sequência de implementação dos passos 4 a 7. `§N` aponta para
 [CHALLENGE.md](CHALLENGE.md); os IDs de teste (`U-`, `I-`, `C-`) são os de
 [TESTES.md](TESTES.md).
