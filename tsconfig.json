@@ -29,5 +29,5 @@
 
     "noEmit": true
   },
-  "include": ["src/**/*", "scripts/**/*", "migrations/**/*"]
+  "include": ["src/**/*", "scripts/**/*", "migrations/**/*", "test/**/*"]
 }
