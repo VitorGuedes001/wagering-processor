@@ -215,9 +215,26 @@ Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
 
 ## Revisão cruzada
 
-Preenchido pelo agente da outra ferramenta.
+Preenchido pelo agente da outra ferramenta (Antigravity — revisão do commit `c6838b3`).
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
+| — | — | — | Nenhum achado. | — |
 
-Veredito: pendente
+**O que foi verificado:**
+- **Escopo e contrato (M0):** tocados exclusivamente `src/domain/wager-transaction.ts`, `test/unit/wager-transaction.test.ts` e esta nota (`git diff --stat main...t12-wager-transaction`). Nenhuma assinatura pública do contrato `T01` foi alterada.
+- **Camadas e restrições invioláveis (CHALLENGE §5, ARQUITETURA §2):** `src/domain/wager-transaction.ts` importa apenas tipos/erros do próprio domínio; nenhum `number`, `parseFloat`, `Number(`, `toFixed` ou `Math.` em caminho de dinheiro (`Math.min` e `2 ** attempts` restritos ao cálculo de milissegundos de backoff em `nextAttemptAt`).
+- **Regras de criação e abertura (MODELAGEM §4.2, D3, D42 e decisão 1 aprovada):**
+  - `create` valida na ordem fixa (kind submetível, proibição de referência em `BET`, obrigatoriedade em `REFUND`/`ROLLBACK`, autorreferência `reference === externalTransactionId` e valor `> 0` exceto `LOSS >= 0`), lançando sempre `InvalidWagerRequestError`.
+  - `opening` exige `money.isPositive()` (lançando `InvalidWagerRequestError` para zero), nasce em `PROCESSED` com `balanceAfter = money`, `processedAt = createdAt = updatedAt = at` e todos os 6 campos de provedor `undefined` (compatível com `wager_tx_provider_fields_ck`, `wager_tx_opening_processed_ck`, `wager_tx_balance_after_ck` e `wager_tx_processed_at_ck` de SCHEMA §2.2).
+  - `rehydrate` reconstrói o agregado sem revalidar transições (§6.0).
+- **Transições, consultas e backoff (MODELAGEM §4.3, D10, D11, D43, D46 e decisões 2–3 aprovadas):**
+  - `markProcessed`, `reject` e `fail` aceitam apenas `PENDING` e `PENDING_REFERENCE`, gravam os campos exigidos por D10/SCHEMA §2.2 e limpam `nextReferenceAttemptAt` via `close(at)` (atendendo `wager_tx_reference_schedule_ck`).
+  - `markPendingReference` (apenas de `PENDING`) e `scheduleReferenceRetry` (apenas de `PENDING_REFERENCE`) aplicam `min(baseMs × 2^attempts, maxMs)` sem estouro em expoentes altos.
+  - Qualquer transição a partir de estado terminal (`PROCESSED`, `REJECTED`, `FAILED`) ou origem não permitida lança `InvalidTransactionStateError` sem mutar estado nem `updatedAt`.
+  - `ledgerDirectionFor` devolve `CREDIT` para `OPENING`/`WIN`/`REFUND`, `DEBIT` para `BET`, inverte a direção de `BET`/`WIN`/`REFUND` no `ROLLBACK` e lança `InvalidTransactionStateError` para `LOSS` ou `ROLLBACK` sem referência reversível.
+- **Gate e testes (MODELAGEM §12):**
+  - No worktree `wp-T12` (ainda baseado em `9726c7a`, antes do merge da T10 e da T14 na `main`), `bun run typecheck` passa limpo e `bun run tarefa:gate` pede `git rebase main`.
+  - Executando os testes de `test/unit/wager-transaction.test.ts` com o `src/domain/money.ts` já entregue na `main` (`0e271e5`), todos os **88 testes (196 asserções)** passam (`88 pass, 0 fail`). Basta rodar `git rebase main` no worktree da T12 antes de integrar.
+
+Veredito: aprovado
