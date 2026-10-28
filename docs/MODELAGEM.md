@@ -42,6 +42,13 @@ Decisões do T01 (contratos, M0), aprovadas em 28/10/2026 — `docs/notas/T01-co
 | D46 | `markProcessed(referenceTransactionId, balanceAfter, at)`, `reject(code, balanceAfter, at)`, `fail(code, at)`: desvio explícito do esqueleto de §6.3 | Snapshot do saldo exigido por D10. §6 permite adaptar assinaturas |
 | D47 | Enums com `enum` do TypeScript | Reuso literal do enunciado |
 
+Decisões da T11 (Wallet e ledger), aprovadas em 28/10/2026 — `docs/notas/T11-wallet.md`:
+
+| # | Decisão | Por quê |
+|---|---|---|
+| D58 | Guardas além de §3 e §6: `WalletLedgerEntry.create` rejeita `balanceBefore` negativo e `walletVersion` que não seja inteiro `>= 1` (`LedgerArithmeticError`); `Wallet.open` rejeita `initialBalance` negativo (`InvalidMoneyError`) | Repetem no domínio os `CHECK` do schema (SCHEMA 2.1, 2.3) e a D16, para o erro aparecer antes do banco |
+| D59 | `debit`/`credit` com valor zero ou negativo lançam `LedgerArithmeticError`, não `InvalidMoneyError` | Chegar ali é bug (`decideWager` filtra antes e `LOSS` não move saldo): tem que virar 500, não um 400 que culpa o cliente (10.4) |
+
 ## 2. Value objects
 
 ### 2.1 Money
