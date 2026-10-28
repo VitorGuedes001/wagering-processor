@@ -42,6 +42,15 @@ Decisões do T01 (contratos, M0), aprovadas em 28/10/2026 — `docs/notas/T01-co
 | D46 | `markProcessed(referenceTransactionId, balanceAfter, at)`, `reject(code, balanceAfter, at)`, `fail(code, at)`: desvio explícito do esqueleto de §6.3 | Snapshot do saldo exigido por D10. §6 permite adaptar assinaturas |
 | D47 | Enums com `enum` do TypeScript | Reuso literal do enunciado |
 
+Decisões da T12 (WagerTransaction), aprovadas em 28/10/2026 — `docs/notas/T12-wager-transaction.md`:
+
+| # | Decisão | Por quê |
+|---|---|---|
+| D54 | `WagerTransaction.opening` com valor zero lança `InvalidWagerRequestError` | É "valor fora da regra do kind" (4.2). Na prática não acontece: `CreateWallet` só chama `opening` com saldo positivo (§3) |
+| D55 | `ledgerDirectionFor` lança `InvalidTransactionStateError` para `LOSS` e para `ROLLBACK` sem referência reversível | É bug de quem chama, não regra de negócio: vira 500 |
+| D56 | `markPendingReference` não verifica se a transação tem referência; só a origem (`PENDING`) é restrita, como em 4.3 | Segue 4.3 à risca. Quem garante é o `decideWager`, que só devolve `AWAIT_REFERENCE` quando há referência |
+| D57 | O worker de referências (T16, T42) considera a referência esgotada **logo depois** do retry que leva `attempts` a `maxAttempts`, sem esperar mais um ciclo | Com `attempts >= max` checado antes do retry, sairiam 11 tentativas (~18,5 min), e não as 10 de D11 (~13,5 min) |
+
 Decisões da T11 (Wallet e ledger), aprovadas em 28/10/2026 — `docs/notas/T11-wallet.md`:
 
 | # | Decisão | Por quê |
