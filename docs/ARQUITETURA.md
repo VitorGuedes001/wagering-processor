@@ -24,6 +24,9 @@ custo sem retorno.
 | D30 | Métricas com `@prometheus-io/client` em `GET /metrics` | Formato padrão, contador e histograma prontos. §12 não fixa formato. É o sucessor oficial do `prom-client`, que foi depreciado, com a mesma API |
 | D31 | Autenticação não implementada. Ficam `AuthGuard` no-op e `ProviderIdentityPort` como pontos de extensão | Auth não vale pontos (§2). O desenho com Keycloak fica descrito na seção 10 |
 | D32 | Workers são laços simples com `setTimeout`, presos ao ciclo de vida do Nest | Dois workers não justificam `@nestjs/schedule`, e o laço permite drenar no `SIGTERM` |
+| D48 | O lease das portas é `leaseMs: number`. O tipo `Duration` citado na seção 3 não existe | Sem tipo novo para uma duração em milissegundos (T01) |
+| D49 | Tipos de entrada e saída dos use cases (`WagerCommand`, `TransactionView`, `SubmitOutcome` etc.) ficam em `src/application/contracts.ts`, separados das portas em `ports.ts` | O HTTP (T31) programa contra eles antes do use case (T30) existir (T01) |
+| D50 | `RequestErrorCode` (MODELAGEM 10.2) fica em `application/contracts.ts`. `FailureCode` fica em `domain` | Erro de requisição nasce no use case. `FailureCode` é gravado na transação (T01) |
 
 ## 2. Camadas
 
