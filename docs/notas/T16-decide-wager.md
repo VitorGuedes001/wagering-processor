@@ -1,6 +1,6 @@
 # T16 — decideWager e reconcile 🔒
 
-> Estado: Abordagem · Raia: G · Revisor: C · Branch: `t16-decide-wager`
+> Estado: Testada · Raia: G · Revisor: C · Branch: `t16-decide-wager`
 
 ## O que muda
 
@@ -199,14 +199,16 @@ Nenhum test double do domínio será usado (apenas `Money.from`/`fromPersistence
 
 ## Ordem de leitura do diff
 
-1. `src/domain/decide-wager.ts` — (será preenchido na implementação)
-2. `src/domain/reconcile.ts` — (será preenchido na implementação)
-3. `test/unit/decide-wager.test.ts` — (será preenchido na implementação)
-4. `test/unit/reconcile.test.ts` — (será preenchido na implementação)
+1. `src/domain/decide-wager.ts` — JSDoc do contrato de tentativas (`D57`, `D61`), as 10 verificações na ordem fixa de `MODELAGEM §5`, o filtro `hasReference` (`D2`, `D56`), `isAllowedReferenceKind` (`MODELAGEM §4.2`) e a distinção `INSUFFICIENT_FUNDS` vs. `REVERSAL_INSUFFICIENT_FUNDS` (`§7.9`).
+2. `src/domain/reconcile.ts` — cálculo de `calculatedBalance = Σ CREDIT − Σ DEBIT` com `Money`, verificação da cadeia de saldos (`balanceBefore` partindo de zero e `isBalanced()`) sem exigir `walletVersion` contígua, e `difference = storedBalance − calculatedBalance`.
+3. `src/domain/failure-code.ts` e `docs/MODELAGEM.md` — registro de `D61` em `§1` e atualização da descrição de `REFERENCE_NOT_PROCESSED` em `§10.1` e no JSDoc do enum.
+4. `test/unit/decide-wager.test.ts` — 112 testes cobrindo `APPLY` por kind, cada linha isolada da tabela de `MODELAGEM §5`, prova da ordem quando duas regras falham juntas, ciclo de 10 tentativas (`D57`, `D61`) e pureza, usando apenas factories reais.
+5. `test/unit/reconcile.test.ts` — 9 testes cobrindo `MODELAGEM §11` e `§12` (consistente sem e com `OPENING`, primeiro lançamento em `walletVersion = 2`, `difference` positiva e negativa, cadeia quebrada no início/meio e lançamento corrompido).
 
 ## Como verificar
 
 ```bash
+bun test ./test/unit/decide-wager.test.ts ./test/unit/reconcile.test.ts
 bun run tarefa:gate
 ```
 
