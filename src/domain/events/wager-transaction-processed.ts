@@ -2,7 +2,7 @@ import { InvalidTransactionStateError } from '../errors';
 import type { MoneyProps } from '../money';
 import {
   type WagerTransaction,
-  type WagerTransactionKind,
+  WagerTransactionKind,
   WagerTransactionStatus,
 } from '../wager-transaction';
 import { type EventContext, IntegrationEvent, type IntegrationEventProps } from './integration-event';
@@ -34,10 +34,15 @@ export class WagerTransactionProcessed extends IntegrationEvent<WagerTransaction
   }
 
   static from(transaction: WagerTransaction, ctx: EventContext): WagerTransactionProcessed {
+    // Campos de provedor só podem faltar no `OPENING` (D42), como nos eventos irmãos.
+    const missingProviderFields =
+      transaction.kind !== WagerTransactionKind.Opening &&
+      (transaction.providerId === undefined || transaction.externalTransactionId === undefined);
     if (
       transaction.status !== WagerTransactionStatus.Processed ||
       transaction.balanceAfter === undefined ||
-      transaction.processedAt === undefined
+      transaction.processedAt === undefined ||
+      missingProviderFields
     ) {
       throw new InvalidTransactionStateError(
         `Cannot build WagerTransactionProcessed from transaction in status ${transaction.status}`,

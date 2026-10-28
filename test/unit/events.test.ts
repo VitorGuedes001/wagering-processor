@@ -214,6 +214,15 @@ describe('IntegrationEvent & Subclasses (U-03, U-04)', () => {
     );
   });
 
+  it('WagerTransactionProcessed.from throws when a non-OPENING transaction lacks provider fields (D42)', () => {
+    expect(() =>
+      WagerTransactionProcessed.from(makeTransaction({ providerId: undefined }), baseCtx),
+    ).toThrow(InvalidTransactionStateError);
+    expect(() =>
+      WagerTransactionProcessed.from(makeTransaction({ externalTransactionId: undefined }), baseCtx),
+    ).toThrow(InvalidTransactionStateError);
+  });
+
   it('U-04: WagerTransactionRejected.from serializes failureCode and MoneyProps', () => {
     const rejectedTx = makeTransaction({
       id: 'tx-rej-1',
