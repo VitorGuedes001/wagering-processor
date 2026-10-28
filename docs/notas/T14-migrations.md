@@ -342,9 +342,17 @@ Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
 
 ## Revisão cruzada
 
-Preenchido pelo agente da outra ferramenta.
+Preenchido pelo agente da outra ferramenta (Antigravity — revisão do commit `0421c20`).
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
+| — | — | — | Nenhum achado. | — |
 
-Veredito: pendente
+**O que foi verificado:**
+- **Gate (`bun run tarefa:gate`):** `typecheck`, `skills` e `arquitetura` verdes.
+- **Escopo:** apenas os 3 arquivos em `migrations/` e esta nota foram tocados.
+- **DDL e contratos (`SCHEMA.md` §2.1–2.5 e `src/application/ports.ts`):** conferidos todos os nomes e tipos de tabelas, colunas (`numeric(19,2)` em todos os campos monetários), FKs compostas (`ledger_wallet_fk`, `ledger_transaction_fk`), os 7 nomes de `UniqueConstraint` (`wallet_player_currency_uq`, `wager_tx_idempotency_uq`, `wager_tx_external_uq`, `wager_tx_single_reversal_uq`, `wager_tx_single_opening_uq`, `ledger_transaction_uq`, `ledger_wallet_version_uq`), índices parciais (`wager_tx_pending_reference_ix`, `outbox_due_ix`) e todas as constraints `CHECK`.
+- **Triggers (`SCHEMA.md` §3, `MODELAGEM.md` §4 e decisões 1–3 aprovadas):** conferidos `wallet_version_rule`, `wallet_no_delete`, `wager_tx_guard` (colunas imutáveis com `IS DISTINCT FROM`, congelamento da linha em status terminal e proibição de retorno a `PENDING`), `ledger_immutable`, `ledger_no_truncate`, `ledger_chain` (com `FOR UPDATE` na `wallet` para serializar inserts concorrentes sem lock prévio) e os dois constraint triggers `DEFERRABLE INITIALLY DEFERRED` (`wallet_ledger_match` e `ledger_wallet_match`) apoiados em `wallet_ledger_assert` (relendo o estado atual da `wallet` no commit e respeitando a isenção `version = 1 AND balance = 0`).
+- **Reversibilidade (`SCHEMA.md` §8 / I-01):** executado `up → down --to 0 → up` em banco descartável (`t14_review_ag` via `docker exec wagering-postgres`, removido ao final); confirmado com `\dt` e `\df` que o `down` remove todas as tabelas, triggers e funções PL/pgSQL sem deixar resíduos.
+
+Veredito: aprovado
