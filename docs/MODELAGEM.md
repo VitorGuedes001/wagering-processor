@@ -31,6 +31,17 @@ o `ARCHITECTURE.md` com a justificativa.
 | D13 | `WALLET_NOT_FOUND` não persiste transação | Sem wallet não há FK válida. Reenviar depois de criar a wallet processa normalmente |
 | D14 | `FAILED` não emite evento | Nenhum dos eventos mínimos cobre. Visível por consulta e métrica |
 
+Decisões do T01 (contratos, M0), aprovadas em 28/10/2026 — `docs/notas/T01-contratos.md`:
+
+| # | Decisão | Por quê |
+|---|---|---|
+| D42 | A transação `OPENING` é criada por `WagerTransaction.opening(...)`, já `PROCESSED`. O use case `CreateWallet` chama `Wallet.open` e `WagerTransaction.opening` | O lançamento de abertura precisa de uma linha de transação (FK, SCHEMA 2.3), e `Wallet.open` não deve conhecer `WagerTransaction` |
+| D43 | `BackoffPolicy { baseMs, maxMs, maxAttempts }` é parâmetro de `markPendingReference`, `scheduleReferenceRetry`, `referenceAttemptsExhausted` e `decideWager` | Os valores vêm de env (D11), e o domínio não lê env |
+| D44 | `EventContext` carrega o `eventId`, gerado pelo use case | O domínio não gera id (`IdGenerator` é porta) |
+| D45 | Os `*State` usam tipos de domínio (`Money`, `Date`, enums). A conversão de `numeric` acontece no repositório | O domínio nunca vê string de banco. A regra 5.1 fica num lugar só |
+| D46 | `markProcessed(referenceTransactionId, balanceAfter, at)`, `reject(code, balanceAfter, at)`, `fail(code, at)`: desvio explícito do esqueleto de §6.3 | Snapshot do saldo exigido por D10. §6 permite adaptar assinaturas |
+| D47 | Enums com `enum` do TypeScript | Reuso literal do enunciado |
+
 ## 2. Value objects
 
 ### 2.1 Money
