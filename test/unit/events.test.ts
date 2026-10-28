@@ -223,6 +223,15 @@ describe('IntegrationEvent & Subclasses (U-03, U-04)', () => {
     ).toThrow(InvalidTransactionStateError);
   });
 
+  it('WagerTransactionProcessed.from throws when PROCESSED lacks balanceAfter or processedAt', () => {
+    expect(() =>
+      WagerTransactionProcessed.from(makeTransaction({ balanceAfter: undefined }), baseCtx),
+    ).toThrow(InvalidTransactionStateError);
+    expect(() =>
+      WagerTransactionProcessed.from(makeTransaction({ processedAt: undefined }), baseCtx),
+    ).toThrow(InvalidTransactionStateError);
+  });
+
   it('U-04: WagerTransactionRejected.from serializes failureCode and MoneyProps', () => {
     const rejectedTx = makeTransaction({
       id: 'tx-rej-1',
@@ -265,6 +274,30 @@ describe('IntegrationEvent & Subclasses (U-03, U-04)', () => {
     expect(() => WagerTransactionRejected.from(processedTx, baseCtx)).toThrow(
       InvalidTransactionStateError,
     );
+  });
+
+  it('WagerTransactionRejected.from throws on the non-status guards', () => {
+    const rejected = {
+      status: WagerTransactionStatus.Rejected,
+      failureCode: FailureCode.InsufficientFunds,
+      balanceAfter: makeMoney('20.00', 'BRL'),
+      processedAt: undefined,
+    };
+    // Sanidade: o estado base é aceito, então cada caso abaixo falha só pelo campo alterado.
+    expect(() => WagerTransactionRejected.from(makeTransaction(rejected), baseCtx)).not.toThrow();
+
+    const invalid: Partial<WagerTransactionState>[] = [
+      { failureCode: undefined },
+      { balanceAfter: undefined },
+      { kind: WagerTransactionKind.Opening },
+      { providerId: undefined },
+      { externalTransactionId: undefined },
+    ];
+    for (const override of invalid) {
+      expect(() =>
+        WagerTransactionRejected.from(makeTransaction({ ...rejected, ...override }), baseCtx),
+      ).toThrow(InvalidTransactionStateError);
+    }
   });
 
   it('U-04: WalletBalanceChanged.from uses wallet.id as aggregateId and serializes MoneyProps', () => {
@@ -386,5 +419,30 @@ describe('IntegrationEvent & Subclasses (U-03, U-04)', () => {
     expect(() => WagerTransactionPendingReference.from(processedTx, baseCtx)).toThrow(
       InvalidTransactionStateError,
     );
+  });
+
+  it('WagerTransactionPendingReference.from throws on the non-status guards', () => {
+    const pendingRef = {
+      kind: WagerTransactionKind.Refund,
+      status: WagerTransactionStatus.PendingReference,
+      referenceExternalTransactionId: 'ext-bet-0',
+      balanceAfter: undefined,
+      processedAt: undefined,
+    };
+    expect(() =>
+      WagerTransactionPendingReference.from(makeTransaction(pendingRef), baseCtx),
+    ).not.toThrow();
+
+    const invalid: Partial<WagerTransactionState>[] = [
+      { referenceExternalTransactionId: undefined },
+      { kind: WagerTransactionKind.Opening },
+      { providerId: undefined },
+      { externalTransactionId: undefined },
+    ];
+    for (const override of invalid) {
+      expect(() =>
+        WagerTransactionPendingReference.from(makeTransaction({ ...pendingRef, ...override }), baseCtx),
+      ).toThrow(InvalidTransactionStateError);
+    }
   });
 });
