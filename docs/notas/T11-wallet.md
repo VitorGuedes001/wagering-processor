@@ -64,5 +64,22 @@ Preenchido pelo agente da outra ferramenta.
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
+| 1 | menor | `docs/notas/T11-wallet.md:33`, `:59` | Nota desatualizada após `36d7874`. "Alternativas descartadas" ainda diz que `Money.zero` foi substituído por `initialBalance.subtract(initialBalance)`, mas o código voltou a usar `Money.zero` (`wallet.ts:69`). "Fora de escopo / dívida" ainda cita o fallback local do helper `money(...)`, que o mesmo commit removeu. O humano lê a nota para entender o diff (EXECUCAO, clareza). | |
+| 2 | menor | `src/domain/wallet-ledger-entry.ts:68`, `:71`; `src/domain/wallet.ts:51` | Há guardas além do que MODELAGEM 6 e 3 listam: `balanceBefore` negativo, `walletVersion` inteiro `>= 1` (ambos lançam `LedgerArithmeticError`) e `initialBalance` negativo em `open` (lança `InvalidMoneyError`). Elas são coerentes com o `CHECK` do schema e com D16, mas são escolhas que os docs não fazem e que não estão em "Decisões pendentes" nem em "Por quê" (AGENTS, escopo 2). Proposta: registrar na nota ou na MODELAGEM 6. | |
+| 3 | menor | `src/domain/wallet.ts:123-125`, `:156-158` | Quando `debit`/`credit` recebem zero ou valor negativo, lançam `InvalidMoneyError`. Pela MODELAGEM 10.4, esse erro vira `INVALID_PAYLOAD` (400) na borda. Chegar aqui com valor não positivo, porém, é bug, porque `decideWager` filtra antes e `LOSS` não move saldo. Se escapar até a borda, o bug fica mascarado como erro do cliente, em vez de virar 500. O tipo do erro não está fixado nos docs: MODELAGEM 3 diz só "rejeitam zero", e o JSDoc diz "ou erro". Sugestão: confirmar a escolha ou registrá-la como decisão. | |
 
-Veredito: pendente
+Verificado sem achado:
+
+- **Gate** (`bun run tarefa:gate`, 28/10/2026): typecheck ok, skills ok, unidade 107 pass / 0 fail, arquitetura 1 pass.
+- **Contratos M0:** `git diff main...t11-wallet -- src/domain` só troca corpos `notImplemented` e imports (`import type` → valor). Nenhuma assinatura pública, `*State` ou `*Props` mudou.
+- **`version`:** começa em 1 com e sem saldo inicial, e o `OPENING` não incrementa (`openingEntry.walletVersion = 1`). Só `debit`/`credit` fazem `+1`. Em erro (saldo, valor, moeda), `version`, `balance` e `updatedAt` ficam intactos, porque a mutação vem depois de `WalletLedgerEntry.create`.
+- **Lançamento:** `debit`/`credit` sempre devolvem o lançamento, com `walletVersion` igual à nova versão. A cadeia 1→4 e `balanceBefore == balanceAfter anterior` estão testadas.
+- **Guardas de `debit`:** acima do saldo lança `InsufficientFundsError`, e o limite exato é permitido. Zero ou negativo é rejeitado. Moeda divergente lança `CurrencyMismatchError` em `canDebit`, `debit` e `credit`.
+- **`WalletLedgerEntry.create`:** lança `LedgerArithmeticError` em cada caso de MODELAGEM 6 (valor zero/negativo, cada uma das 3 combinações de moeda, aritmética de CREDIT e de DEBIT, direção invertida, `balanceAfter` negativo). A moeda é checada antes da aritmética, então não vaza `CurrencyMismatchError` do `Money`. `rehydrate` não revalida, e `isBalanced()` devolve `false` para dado adulterado.
+- **Restrição 5.1:** nenhum `parseFloat`, `Number(`, `toFixed` ou `Math.` no diff. Toda a aritmética de dinheiro passa por `Money` (`bigint`). O único `%` é em `walletVersion`, que não é dinheiro.
+- **Camadas:** `domain` importa só `./errors`, `./money` e `./wallet-ledger-entry`.
+- **Test doubles:** nenhum. O commit `36d7874` removeu o `Money` falso, e os testes usam `Money.from`/`fromPersistence` reais, sem mock, spy ou stub.
+- **Commit do integrador `36d7874`:** correto. `Money.zero(initialBalance.currency)` é equivalente ao `subtract` anterior e mais claro. `import { Money }` como valor é necessário. O helper de teste segue a MODELAGEM 2.1, já que negativo só existe via `fromPersistence`.
+- **MODELAGEM 12:** `Wallet` (open com e sem saldo, `version`, `canDebit` no limite exato, debit além do saldo, moeda divergente) e `WalletLedgerEntry` (aritmética válida e cada violação) estão todos cobertos. Não falta caso.
+
+Veredito: aprovado com ressalvas
