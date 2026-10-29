@@ -52,6 +52,6 @@ o limite de 4 agentes ativos e 3 tarefas esperando revisão (EXECUCAO §6).
 | M3 | T20–T22 | `m3-persistencia` | fechado em 28/10/2026 |
 | M4 | T30, T31 | `m4-fatia-vertical` | fechado em 29/10/2026 |
 | M5 | T32 + C-01, C-02, C-02b, C-03 verdes em `test:stress` | `m5-concorrencia` | fechado em 29/10/2026 |
-| M6 | T40, T41 | `m6-mensageria` | — |
-| M7 | T42, T43 | `m7-completo` | — |
+| M6 | T40, T41 | `m6-mensageria` | fechado em 29/10/2026 |
+| M7 | T42, T43 | `m7-completo` | fechado em 29/10/2026 |
 | M8 | T50, T51 | `v1.0.0` | — |
