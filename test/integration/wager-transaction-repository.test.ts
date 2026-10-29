@@ -37,6 +37,15 @@ const T0 = new Date('2026-10-28T12:00:00.000Z');
 const T1 = new Date('2026-10-28T12:00:05.000Z');
 const T2 = new Date('2026-10-28T12:00:10.000Z');
 
+async function caught(fn: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await fn();
+  } catch (error) {
+    return error;
+  }
+  throw new Error('esperava erro');
+}
+
 function makeTransactionProps(
   overrides: Partial<CreateWagerTransactionProps> & { walletId: string; playerId: string },
 ): CreateWagerTransactionProps {
@@ -187,7 +196,6 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
    * `MikroOrmWagerTransactionRepository` + `wallet_ledger_entry` na mesma transação.
    */
   async function openFundedWallet(
-    repo: MikroOrmWagerTransactionRepository,
     em: ReturnType<typeof orm.em.fork>,
     initialAmount = '100.00',
     currency = 'BRL',
@@ -250,7 +258,6 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
       );
     });
 
-    void repo;
     return { wallet, openingTx };
   }
 
@@ -258,7 +265,7 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
     const em = orm.em.fork();
     const repo = new MikroOrmWagerTransactionRepository(em);
 
-    const { wallet, openingTx } = await openFundedWallet(repo, em, '250.75', 'BRL');
+    const { wallet, openingTx } = await openFundedWallet(em, '250.75', 'BRL');
 
     const rawRecord = await em.findOneOrFail(
       WagerTransactionRecord,
@@ -306,7 +313,7 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
   test('ida e volta de BET, WIN, LOSS (0.00 e > 0), REFUND e ROLLBACK PROCESSED, preservando extremos de numeric(19,2) como string', async () => {
     const em = orm.em.fork();
     const repo = new MikroOrmWagerTransactionRepository(em);
-    const { wallet } = await openFundedWallet(repo, em, '100.00', 'BRL');
+    const { wallet } = await openFundedWallet(em, '100.00', 'BRL');
 
     // 1. BET 25.00 -> saldo 75.00
     const betProps = makeTransactionProps({
@@ -632,7 +639,7 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
   test('hasProcessedReversal distingue reversões PROCESSED de REJECTED/FAILED e de WIN/LOSS (D1)', async () => {
     const em = orm.em.fork();
     const repo = new MikroOrmWagerTransactionRepository(em);
-    const { wallet } = await openFundedWallet(repo, em, '100.00', 'BRL');
+    const { wallet } = await openFundedWallet(em, '100.00', 'BRL');
 
     // Cria duas BETs PROCESSED
     const bet1 = WagerTransaction.create(
@@ -684,20 +691,71 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
     await repo.insert(lossOnBet1);
     expect(await repo.hasProcessedReversal(bet1.id)).toBe(false);
 
-    // REFUND REJECTED referenciando bet1 NÃO ocupa a vaga (D1)
-    const rejectedRefund = WagerTransaction.create(
-      makeTransactionProps({
-        walletId: wallet.id,
-        playerId: wallet.playerId,
-        roundId: bet1.roundId,
-        kind: WagerTransactionKind.Refund,
-        money: Money.from({ amount: '99.00', currency: 'BRL' }),
-        referenceExternalTransactionId: bet1.externalTransactionId,
-        at: T1,
-      }),
-    );
-    rejectedRefund.reject(FailureCode.ReferenceAmountMismatch, wallet.balance, T1);
+    // REFUND REJECTED **com** reference_transaction_id apontando para bet1 NÃO ocupa a vaga (D1: exercita o filtro de status = PROCESSED)
+    const rejectedRefundProps = makeTransactionProps({
+      walletId: wallet.id,
+      playerId: wallet.playerId,
+      roundId: bet1.roundId,
+      kind: WagerTransactionKind.Refund,
+      money: Money.from({ amount: '99.00', currency: 'BRL' }),
+      referenceExternalTransactionId: bet1.externalTransactionId,
+      at: T1,
+    });
+    const rejectedRefund = WagerTransaction.rehydrate({
+      id: rejectedRefundProps.id,
+      providerId: rejectedRefundProps.providerId,
+      externalTransactionId: rejectedRefundProps.externalTransactionId,
+      idempotencyKey: rejectedRefundProps.idempotencyKey,
+      payloadHash: rejectedRefundProps.payloadHash,
+      walletId: rejectedRefundProps.walletId,
+      playerId: rejectedRefundProps.playerId,
+      roundId: rejectedRefundProps.roundId,
+      gameId: rejectedRefundProps.gameId,
+      kind: WagerTransactionKind.Refund,
+      money: rejectedRefundProps.money,
+      referenceExternalTransactionId: bet1.externalTransactionId,
+      status: WagerTransactionStatus.Rejected,
+      referenceTransactionId: bet1.id,
+      failureCode: FailureCode.ReferenceAmountMismatch,
+      balanceAfter: wallet.balance,
+      referenceAttempts: 0,
+      createdAt: T1,
+      updatedAt: T1,
+    });
     await repo.insert(rejectedRefund);
+    expect(await repo.hasProcessedReversal(bet1.id)).toBe(false);
+
+    // ROLLBACK FAILED **com** reference_transaction_id apontando para bet1 também NÃO ocupa a vaga
+    const failedRollbackProps = makeTransactionProps({
+      walletId: wallet.id,
+      playerId: wallet.playerId,
+      roundId: bet1.roundId,
+      kind: WagerTransactionKind.Rollback,
+      money: bet1.money,
+      referenceExternalTransactionId: bet1.externalTransactionId,
+      at: T1,
+    });
+    const failedRollback = WagerTransaction.rehydrate({
+      id: failedRollbackProps.id,
+      providerId: failedRollbackProps.providerId,
+      externalTransactionId: failedRollbackProps.externalTransactionId,
+      idempotencyKey: failedRollbackProps.idempotencyKey,
+      payloadHash: failedRollbackProps.payloadHash,
+      walletId: failedRollbackProps.walletId,
+      playerId: failedRollbackProps.playerId,
+      roundId: failedRollbackProps.roundId,
+      gameId: failedRollbackProps.gameId,
+      kind: WagerTransactionKind.Rollback,
+      money: failedRollbackProps.money,
+      referenceExternalTransactionId: bet1.externalTransactionId,
+      status: WagerTransactionStatus.Failed,
+      referenceTransactionId: bet1.id,
+      failureCode: FailureCode.ProcessingFailed,
+      referenceAttempts: 1,
+      createdAt: T1,
+      updatedAt: T1,
+    });
+    await repo.insert(failedRollback);
     expect(await repo.hasProcessedReversal(bet1.id)).toBe(false);
 
     // REFUND PROCESSED referenciando bet1 -> true
@@ -748,7 +806,7 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
   test('update persiste scheduleReferenceRetry e transições de PENDING_REFERENCE para PROCESSED, REJECTED e FAILED', async () => {
     const em = orm.em.fork();
     const repo = new MikroOrmWagerTransactionRepository(em);
-    const { wallet } = await openFundedWallet(repo, em, '100.00', 'BRL');
+    const { wallet } = await openFundedWallet(em, '100.00', 'BRL');
 
     // BET referenciada chega
     const bet = WagerTransaction.create(
@@ -868,7 +926,7 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
     ghost.reject(FailureCode.InsufficientFunds, wallet.balance, T1);
     await expect(repo.update(ghost)).rejects.toThrow(/não encontrada para update/);
 
-    // 5. tentar regravar por update uma transação já terminal no banco é barrado por wager_tx_guard (SCHEMA §5: bug, não UniqueViolationError nem TransientInfrastructureError)
+    // 5. tentar regravar por update uma transação já terminal no banco é barrado por wager_tx_guard (D51, D52: SQLSTATE 23000, constraint wager_tx_guard)
     const staleCopy = WagerTransaction.rehydrate({
       id: pendingToReject.id,
       providerId: pendingToReject.providerId,
@@ -888,16 +946,18 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
       createdAt: T0,
       updatedAt: T2,
     });
-    try {
-      await repo.update(staleCopy);
-      throw new Error('Deveria ter falhado por wager_tx_guard');
-    } catch (err) {
-      expect(err).not.toBeInstanceOf(UniqueViolationError);
-      expect(err).not.toBeInstanceOf(TransientInfrastructureError);
-    }
+    const guardErr = await caught(() => repo.update(staleCopy));
+    expect(guardErr).not.toBeInstanceOf(UniqueViolationError);
+    expect(guardErr).not.toBeInstanceOf(TransientInfrastructureError);
+    expect((guardErr as { code?: string }).code).toBe('23000');
+    expect((guardErr as { constraint?: string }).constraint).toBe('wager_tx_guard');
+
+    const stillRejected = await repo.findById(pendingToReject.id);
+    expect(stillRejected?.status).toBe(WagerTransactionStatus.Rejected);
+    expect(stillRejected?.failureCode).toBe(FailureCode.ReferenceNotFound);
   });
 
-  test('lockById adquire SELECT ... FOR UPDATE na linha, relê estado fresco sem bloquear outra linha e traduz lock_timeout (55P03) para TransientInfrastructureError', async () => {
+  test('lockById adquire SELECT ... FOR UPDATE na linha, relê estado fresco sem bloquear outra linha e propaga lock_timeout (55P03)', async () => {
     const em1 = orm.em.fork();
     const em2 = orm.em.fork();
     const wallet = await insertEmptyWallet('BRL');
@@ -955,14 +1015,15 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
       });
       expect(lockedOther?.id).toBe(otherTx.id);
 
-      // Segunda transação com lock_timeout curto falha ao tentar lockById na mesma linha
-      await expect(
+      // Segunda transação com lock_timeout curto falha com SQLSTATE 55P03 ao tentar lockById na mesma linha
+      const lockErr = await caught(() =>
         em2.transactional(async (txEm2) => {
           await txEm2.execute(`SET LOCAL lock_timeout = '100ms'`);
           const txRepo2 = new MikroOrmWagerTransactionRepository(txEm2);
           await txRepo2.lockById(pendingTx.id);
         }),
-      ).rejects.toBeInstanceOf(TransientInfrastructureError);
+      );
+      expect((lockErr as { code?: string }).code).toBe('55P03');
     });
   });
 
@@ -1039,17 +1100,18 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
       new Date(now.getTime() + 30_000).toISOString(),
     );
 
-    // 5. Após o lease expirar (now + 30s), due1, due2 e due3 voltam a ser elegíveis (mas future em +60s ainda não)
+    // 5. Após o lease expirar (now + 30s), due1, due2 e due3 voltam a ser elegíveis empatadas em next_reference_attempt_at, ordenadas por (next_reference_attempt_at ASC, id ASC); future em +60s ainda não
     const afterLeaseExpired = new Date(now.getTime() + 30_000);
     const reClaimed = await repo.claimDuePendingReferences(afterLeaseExpired, 2, 30_000);
-    expect(reClaimed).toHaveLength(2);
+    const expectedByTieBreak = [due1.id, due2.id, due3.id].sort().slice(0, 2);
+    expect(reClaimed).toEqual(expectedByTieBreak);
     expect(reClaimed.includes(future.id)).toBe(false);
   });
 
-  test('insert traduz violações 23505 dos índices únicos de wager_transaction em UniqueViolationError', async () => {
+  test('insert propaga violações 23505 com o nome de cada constraint única de wager_transaction', async () => {
     const em = orm.em.fork();
     const repo = new MikroOrmWagerTransactionRepository(em);
-    const { wallet } = await openFundedWallet(repo, em, '100.00', 'BRL');
+    const { wallet } = await openFundedWallet(em, '100.00', 'BRL');
 
     // 1. wager_tx_single_opening_uq: segunda OPENING na mesma wallet
     const duplicateOpening = WagerTransaction.opening({
@@ -1059,12 +1121,9 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
       money: Money.from({ amount: '10.00', currency: 'BRL' }),
       at: T0,
     });
-    await expect(repo.insert(duplicateOpening)).rejects.toEqual(
-      expect.objectContaining({
-        name: 'UniqueViolationError',
-        constraint: 'wager_tx_single_opening_uq',
-      }),
-    );
+    const openingErr = await caught(() => repo.insert(duplicateOpening));
+    expect((openingErr as { code?: string }).code).toBe('23505');
+    expect((openingErr as { constraint?: string }).constraint).toBe('wager_tx_single_opening_uq');
 
     // Transação base para testar idempotency, external e single_reversal
     const bet = WagerTransaction.create(
@@ -1098,13 +1157,9 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
       }),
     );
     dupIdempotency.reject(FailureCode.InsufficientFunds, wallet.balance, T0);
-    try {
-      await repo.insert(dupIdempotency);
-      throw new Error('Deveria ter lançado UniqueViolationError');
-    } catch (err) {
-      expect(err).toBeInstanceOf(UniqueViolationError);
-      expect((err as UniqueViolationError).constraint).toBe('wager_tx_idempotency_uq');
-    }
+    const idemErr = await caught(() => repo.insert(dupIdempotency));
+    expect((idemErr as { code?: string }).code).toBe('23505');
+    expect((idemErr as { constraint?: string }).constraint).toBe('wager_tx_idempotency_uq');
 
     // 3. wager_tx_external_uq: mesmo (providerId, externalTransactionId) com outra idempotencyKey
     const dupExternal = WagerTransaction.create(
@@ -1120,13 +1175,9 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
       }),
     );
     dupExternal.reject(FailureCode.InsufficientFunds, wallet.balance, T0);
-    try {
-      await repo.insert(dupExternal);
-      throw new Error('Deveria ter lançado UniqueViolationError');
-    } catch (err) {
-      expect(err).toBeInstanceOf(UniqueViolationError);
-      expect((err as UniqueViolationError).constraint).toBe('wager_tx_external_uq');
-    }
+    const extErr = await caught(() => repo.insert(dupExternal));
+    expect((extErr as { code?: string }).code).toBe('23505');
+    expect((extErr as { constraint?: string }).constraint).toBe('wager_tx_external_uq');
 
     // 4. wager_tx_single_reversal_uq: segunda reversão PROCESSED para a mesma referência
     const refund1 = WagerTransaction.create(
@@ -1159,12 +1210,8 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
       }),
     );
     rollbackDup.markProcessed(bet.id, wallet.balance, T2);
-    try {
-      await repo.insert(rollbackDup);
-      throw new Error('Deveria ter lançado UniqueViolationError');
-    } catch (err) {
-      expect(err).toBeInstanceOf(UniqueViolationError);
-      expect((err as UniqueViolationError).constraint).toBe('wager_tx_single_reversal_uq');
-    }
+    const revErr = await caught(() => repo.insert(rollbackDup));
+    expect((revErr as { code?: string }).code).toBe('23505');
+    expect((revErr as { constraint?: string }).constraint).toBe('wager_tx_single_reversal_uq');
   });
 });
