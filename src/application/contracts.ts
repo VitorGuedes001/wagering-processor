@@ -97,3 +97,32 @@ export type SubmitOutcome =
   | { type: 'DUPLICATE_MESSAGE' }
   /** Inbox: mesmo `messageId`, hash diferente. DLQ (D7). */
   | { type: 'MESSAGE_PAYLOAD_MISMATCH' };
+
+
+// ------------------------------------------------------------------ extrato e reconciliação
+
+export interface LedgerEntryView {
+  id: string;
+  transactionId: string;
+  direction: string;
+  money: MoneyProps;
+  balanceBefore: MoneyProps;
+  balanceAfter: MoneyProps;
+  walletVersion: number;
+  createdAt: string;
+}
+
+export interface LedgerPageView {
+  items: LedgerEntryView[];
+  nextCursor: string | null;
+}
+
+export interface ReconciliationView {
+  walletId: string;
+  storedBalance: MoneyProps;
+  calculatedBalance: MoneyProps;
+  difference: MoneyProps;
+  consistent: boolean;
+  chainIntact: boolean;
+  checkedEntries: number;
+}

@@ -31,6 +31,7 @@ Duas regras inegociáveis vêm do enunciado:
 | D60 | O banco template leva sufixo por worktree: `wagering_template_<hash curto do caminho absoluto do worktree>` | Todos os worktrees compartilham o mesmo PostgreSQL. Com nome por worktree, execuções em paralelo não derrubam nem clonam o template de outra branch (T15) |
 | D66 | No I-15, a falha transitória é simulada com o portão de lock (D37) e `DB_LOCK_TIMEOUT_MS` curto, e não com `docker pause` | O Postgres é compartilhado pelos worktrees, e o AGENTS proíbe pausar containers. O `lock_timeout` vira erro transitório e prova o mesmo retry com sucesso (T40, DP-5) |
 | D71 | O C-07b roda em duas variantes: (a) por HTTP, com a BET já existente, e (b) pelo worker, com as duas reversões em `PENDING_REFERENCE` | A linha do C-07b não diz se as reversões estão pendentes. Só a variante (b) exercita o worker de referências (T42, decisão 7) |
+| D72 | O teste de extrato da T43 fica como teste complementar de regressão, sem o ID I-20 e sem alegar concorrência | EXECUCAO §6 dá à T43 só o I-21, e o PLANO §2.2 (B9) tira o I-20 dela (T43, decisão 1) |
 
 ## 2. Níveis
 

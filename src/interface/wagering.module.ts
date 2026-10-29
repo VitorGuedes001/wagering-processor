@@ -9,6 +9,7 @@ import { CreateWallet } from '../application/create-wallet';
 import type { Clock, IdGenerator, UnitOfWork } from '../application/ports';
 import { ApplicationTransactionQueries, ApplicationWalletQueries } from '../application/queries';
 import { RecordProcessingFailure } from '../application/record-processing-failure';
+import { ReconcileWallet } from '../application/reconcile-wallet';
 import { ResolvePendingReferences } from '../application/resolve-pending-references';
 import {
   DEFAULT_REFERENCE_BACKOFF,
@@ -76,6 +77,11 @@ const WAGERING_PROVIDERS: Provider[] = [
   },
   // Só roda se ENABLE_REFERENCE_WORKER (D28).
   PendingReferenceWorker,
+  {
+    provide: ReconcileWallet,
+    inject: [UNIT_OF_WORK],
+    useFactory: (uow: UnitOfWork) => new ReconcileWallet(uow),
+  },
   {
     provide: ApplicationWalletQueries,
     inject: [UNIT_OF_WORK],
