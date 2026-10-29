@@ -339,7 +339,20 @@ Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
 
 Preenchido pelo agente da outra ferramenta.
 
+Revisor: Antigravity, 29/10/2026, sobre `316f471` (base `71dbc44`).
+
+**Gate.** `bun run tarefa:gate` executado no worktree `wp-T42`: 100% verde (typecheck, skills, unidade, arquitetura, integração [inclui I-18 e I-19], concorrência [11 pass, 1 skip C-07]).
+
+O que verifiquei sem achado:
+- **Escopo:** Os 9 arquivos tocados batem perfeitamente com a Lista A da Abordagem aprovada.
+- **Camadas e contratos:** Contratos de `src/domain/` e `src/application/ports.ts` mantidos 100% congelados. O use case `ResolvePendingReferences` foi posicionado em `src/application/` respeitando a convenção consolidada em `29e032b`. O worker em `src/interface/workers/` gerencia apenas o laço de agendamento e ciclo de vida do Nest (D32, ARQUITETURA §7.3).
+- **Dinheiro (restrição 5.1):** Preservado estritamente como string nas bordas e BigInt no domínio. Nenhuma operação numérica em dinheiro.
+- **Concorrência e isolamento (D18, SCHEMA §4.3, §4.5):** O claim de itens pendentes é feito em transação curta com lease e `FOR UPDATE SKIP LOCKED`. Cada item reclamado é resolvido em sua própria transação, adquirindo `wallets.lockById` primeiro e re-verificando `PENDING_REFERENCE` sob `transactions.lockById`.
+- **Serialização de reversões (D1, C-07b):** Duas reversões (`REFUND` e `ROLLBACK`) sobre a mesma `BET` disputando resolução concorrente se serializam corretamente no lock da wallet, com a segunda transição resultando em `REFERENCE_ALREADY_REVERSED`.
+- **Decisões:** Decisões 1 a 7 documentadas e justificadas.
+
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
+| 1 | menor | `test/concurrency/reference-worker.test.ts:26-29` | O teste C-07 está condicionado a `skipIf(!CONSUMER_AVAILABLE)`. Como a T40 e a T42 foram desenvolvidas em paralelo, a execução efetiva de C-07 deve ocorrer após o rebase da branch sobre a T40 integrada na `main`. A nota já documenta esta condição na seção "Fora de escopo / dívida". | |
 
-Veredito: pendente
+Veredito: aprovado com ressalvas
