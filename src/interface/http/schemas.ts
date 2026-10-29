@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { decodeCursor } from '../../application/queries';
 
 /** Regex de formato monetário decimal estrito (MODELAGEM 2.1). */
 const AMOUNT_REGEX = /^(0|[1-9]\d*)\.(\d{2})$/;
@@ -45,16 +46,8 @@ export const idempotencyKeyHeaderSchema = z
 
 function isValidCursor(val: string): boolean {
   try {
-    if (!/^[A-Za-z0-9_-]+$/.test(val)) return false;
-    const decoded = JSON.parse(Buffer.from(val, 'base64url').toString('utf8'));
-    return (
-      typeof decoded === 'object' &&
-      decoded !== null &&
-      !Array.isArray(decoded) &&
-      typeof decoded.v === 'number' &&
-      Number.isInteger(decoded.v) &&
-      decoded.v >= 0
-    );
+    decodeCursor(val);
+    return true;
   } catch {
     return false;
   }
@@ -64,7 +57,7 @@ export const getLedgerQuerySchema = z.object({
   cursor: z
     .string({ message: 'cursor deve ser uma string opaca base64url' })
     .refine(isValidCursor, {
-      message: 'cursor deve ser base64url({ "v": integer >= 0 })',
+      message: 'cursor deve ser base64url({ "v": inteiro entre 0 e 2147483647 })',
     })
     .optional(),
   limit: z.coerce

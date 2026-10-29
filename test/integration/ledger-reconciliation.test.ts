@@ -215,6 +215,12 @@ describe('T43 — Extrato e reconciliação (I-21 e teste complementar de extrat
       const r7 = await apiRequest('GET', `/wallets/${walletId}/ledger?cursor=${arr}`);
       expect(r7.status).toBe(400);
       expect(r7.body.code).toBe(RequestErrorCode.InvalidPayload);
+
+      // 8. `v` acima do limite de `integer` do Postgres (wallet_version)
+      const hugeV = Buffer.from(JSON.stringify({ v: 2_147_483_648 })).toString('base64url');
+      const r8 = await apiRequest('GET', `/wallets/${walletId}/ledger?cursor=${hugeV}`);
+      expect(r8.status).toBe(400);
+      expect(r8.body.code).toBe(RequestErrorCode.InvalidPayload);
     });
 
     test('retorna 404 WALLET_NOT_FOUND para wallet inexistente', async () => {
