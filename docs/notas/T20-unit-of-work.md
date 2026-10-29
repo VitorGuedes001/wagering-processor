@@ -153,6 +153,8 @@ Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
 `package.json`) que o humano aplica no merge.
 
 - `mikro-orm.config.ts`: registrar `WalletRecord` e `LedgerEntryRecord` em `entities`.
+- `ARCHITECTURE.md` §14: registrar a limitação da conexão presa no pool quando a sessão do
+  Postgres morre no meio da transação (Kysely 0.29.6; ver "Fora de escopo / dívida").
 - Para T21 e T22: `Money` não expõe `amount` como getter. A ida para o record usa
   `money.toJSON().amount`, para não mexer na assinatura congelada do domínio.
   O teste monta o próprio `MikroORM` com essas entidades, então não depende disso.
@@ -170,9 +172,9 @@ Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
   conexão: a query seguinte trava. O erro já chega traduzido como transitório; o que se
   perde é a vaga no pool. Só acontece quando a sessão morre (restart ou failover do
   Postgres, `pg_terminate_backend`, `idle_in_transaction_session_timeout`), não em
-  `lock_timeout`, `statement_timeout` nem trigger. É decisão do humano: patch do Kysely
-  (`bun patch`, mexe em `package.json`), relatar ao projeto, ou aceitar como limitação em
-  `ARCHITECTURE.md` §14. Os dois testes que derrubam a conexão usam um ORM descartável por
+  `lock_timeout`, `statement_timeout` nem trigger. **Decisão do humano
+  (28/10/2026): aceitar e documentar.** Na integração, entra como limitação conhecida em
+  `ARCHITECTURE.md` §14, sem patch do Kysely. Os dois testes que derrubam a conexão usam um ORM descartável por
   causa disso.
 - No teste, as linhas de `wager_transaction` que a FK do ledger exige são gravadas por SQL
   cru no `em` da transação, e os repositórios de transação, inbox e outbox lançam se
