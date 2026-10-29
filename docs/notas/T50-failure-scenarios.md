@@ -1,14 +1,27 @@
 # T50 — Cenários de falha
 
-> Estado: Abordagem · Raia: C · Revisor: G · Branch: `t50-failure-scenarios`
+> Estado: Testada · Raia: C · Revisor: G · Branch: `t50-failure-scenarios`
 
 ## O que muda
 
-Uma frase por arquivo tocado.
+- `test/concurrency/failure-scenarios.test.ts` (novo): C-05 (crash depois do
+  COMMIT e antes do ack) e C-08 (SIGKILL em duas de três instâncias no meio da
+  carga), com processos reais da aplicação.
+- `test/support/queues.ts`: `createTestQueues` aceita
+  `visibilityTimeoutSeconds` (padrão 30), usado com 3 s nos dois cenários.
 
 ## Por quê
 
-Regras atendidas, com referência aos docs (ex.: MODELAGEM 4.3; D2).
+- CHALLENGE §13.5 e §13.8, TESTES 4.3 (C-05, C-08) e EXECUCAO §6 (aceite da
+  T50: os dois verdes e `test:stress` limpo).
+- C-05 prova a restrição 2 (idempotência no banco, não em memória): a
+  redelivery cai no replay pela inbox (ARQUITETURA 7.2, D65) e não debita de novo.
+- C-08 prova as restrições 3, 4 e 8 com crash real: a fila FIFO não é garantia,
+  o outbox reservado por uma instância morta volta pelo lease (D18, D62) e nenhuma
+  correção depende de estado em memória. A verificação final usa as invariantes
+  D40, a reconciliação HTTP da T43 e um resultado terminal por chave.
+- Visibilidade curta (DP-1) e ordem de subida do C-05 (DP-2) seguem as
+  decisões aprovadas.
 
 ## Abordagem
 
@@ -105,15 +118,30 @@ testes de aceite existentes.
 
 ## Ordem de leitura do diff
 
-1. `arquivo` — o que olhar nele
+1. `test/concurrency/failure-scenarios.test.ts`, bloco C-05: o passo entre a
+   morte de A e a subida de B. As asserções ali (1 transação, 1 `DEBIT`, inbox
+   processada, `queueDepth = 1`) provam que o commit aconteceu e o ack não.
+2. Mesmo arquivo, bloco C-08: o `eventually` que espera 1/3 da carga antes do
+   `SIGKILL`, o reenvio HTTP com a mesma `Idempotency-Key` e a drenagem (fila,
+   outbox e referências) antes das verificações.
+3. Mesmo arquivo, funções SQL no fim: leem o banco direto, sem passar pela
+   aplicação (TESTES 3.5).
+4. `test/support/queues.ts`: só a opção nova de visibilidade; o padrão segue 30.
 
 ## Como verificar
 
 ```bash
 bun run tarefa:gate
+bun test test/concurrency/failure-scenarios.test.ts
+bun run test:stress
 ```
 
+Resultado em 2026-10-29, no Windows: `bun run test:stress` com 160 pass e 0 fail (16 testes de concorrência × 10, 383 s). O `failure-scenarios.test.ts` sozinho leva cerca de 16 s por rodada.
+
 ## Decisões pendentes
+
+Nenhuma aberta. DP-1 a DP-4 foram aprovadas pelo humano em 2026-10-29 conforme
+as propostas abaixo e implementadas assim. O texto fica como registro.
 
 - **DP-1. Visibilidade curta nas filas de teste do C-05 e do C-08.** TESTES 3.2
   pede para as filas de teste "a mesma redrive policy". A visibilidade de 30 s
