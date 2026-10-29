@@ -42,3 +42,11 @@ export const idempotencyKeyHeaderSchema = z
   .string({ message: 'Idempotency-Key é obrigatório' })
   .min(1, { message: 'Idempotency-Key não pode ser vazio' })
   .max(256, { message: 'Idempotency-Key não pode ter mais de 256 caracteres' });
+
+export const getLedgerQuerySchema = z.object({
+  afterVersion: z.coerce.number().int({ message: 'afterVersion deve ser inteiro' }).min(0, { message: 'afterVersion deve ser >= 0' }).optional(),
+  cursor: z.union([z.coerce.number().int().min(0), z.string()]).optional(),
+  limit: z.coerce.number().int({ message: 'limit deve ser inteiro' }).min(1, { message: 'limit deve ser no mínimo 1' }).max(200, { message: 'limit deve ser no máximo 200' }).default(50),
+});
+
+export type GetLedgerQueryInput = z.infer<typeof getLedgerQuerySchema>;
