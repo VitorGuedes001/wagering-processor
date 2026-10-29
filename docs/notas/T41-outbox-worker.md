@@ -4,58 +4,63 @@
 
 ## O que muda
 
+- `src/application/publish-outbox.ts` — Use case `PublishOutbox` implementando o ciclo de D62: claim curto em `uow.run` com `FOR UPDATE SKIP LOCKED` e lease (D18), publicação SQS fora de transação (restrição 4) e `markPublished` / `scheduleRetry` com backoff (D12) em `uow.run` curtos separados (ARQUITETURA §2.1, §4).
 - `src/infrastructure/messaging/sqs-event-publisher.ts` — Implementa a porta `EventPublisher` via AWS SDK SQS com envio para `SQS_EVENTS_QUEUE`, deduplicação por `eventId` e agrupamento por `aggregateId` (D20).
 - `src/infrastructure/messaging/messaging.module.ts` — Registra e exporta `SqsEventPublisher` e o token `EVENT_PUBLISHER`.
-- `src/infrastructure/persistence/outbox-repository.ts` — Adiciona método `computeLagSeconds` para cálculo do lag de outbox via `MIN(occurred_at) WHERE published_at IS NULL` (SCHEMA 4.6; ARQUITETURA §9).
-- `src/interface/workers/outbox.worker.ts` — Implementa `OutboxWorker` com laço de polling baseado em `setTimeout` (D32), claim em `uow.run` curto, publicação fora de transação e `markPublished`/`scheduleRetry` em `uow.run` separados (D18, D62), injeção de falhas (D38), métricas de lag/publicação/retries e drenagem em shutdown (ARQUITETURA §7.3).
-- `src/interface/workers/workers.module.ts` — Módulo NestJS que declara e exporta `OutboxWorker`.
-- `src/main.ts` — Inicia e encerra o `OutboxWorker` de acordo com a flag `ENABLE_OUTBOX_WORKER`.
-- `test/integration/outbox-worker.test.ts` — Testes de integração I-16 (publicação após commit, bloqueio total com `uow.before-commit`, publicação única no caminho feliz, métricas e retries).
-- `test/concurrency/outbox-worker.test.ts` — Testes de concorrência C-06 (1000 eventos no outbox em 2 instâncias de worker sem perda de eventos) e C-06b (falha de processo com `FAULT_POINT=outbox.after-claim-before-publish` e recuperação por lease expirado em outra instância).
-- `docs/notas/T41-outbox-worker.md` — Nota de documentação da tarefa T41.
+- `src/infrastructure/persistence/outbox-repository.ts` — Adiciona método `computeLagSeconds` para cálculo do lag de outbox no adaptador MikroORM via `MIN(occurred_at) WHERE published_at IS NULL` (SCHEMA 4.6; ARQUITETURA §9).
+- `src/interface/workers/outbox.worker.ts` — Implementa `OutboxWorker` com laço de polling baseado em `setTimeout` (D32), preso aos hooks de ciclo de vida do Nest (`OnApplicationBootstrap`, `BeforeApplicationShutdown`) para shutdown limpo antes do fechamento do ORM (ARQUITETURA §7.3), delegação para o use case `PublishOutbox`, injeção de falhas (D38), métricas de observabilidade e logs estruturados com contexto em caso de falha.
+- `src/interface/wagering.module.ts` — Registra `PublishOutbox` e `OutboxWorker` na lista de providers do `WageringModule` e isola os componentes em `withUnitOfWork` (`ENABLE_OUTBOX_WORKER=false`).
+- `src/main.ts` — Inicialização padrão via Nest sem montagem manual de worker nem SIGTERM paralelo; suporta inicialização headless (`ENABLE_HTTP=false`) chamando `app.init()`.
+- `test/support/app-process.ts` — Suporte à prontidão de processos headless via sinal `{"msg":"ready"}` sem probe HTTP.
+- `test/integration/outbox-worker.test.ts` — Testes de integração I-16 (publicação após commit, bloqueio total com `uow.before-commit` com worker executando tick pós-crash, publicação única no caminho feliz e verificação real de `wagering_retries_total` no registry).
+- `test/concurrency/outbox-worker.test.ts` — Testes de concorrência C-06 (1000 eventos no outbox em 2 instâncias de worker sem HTTP, com drenagem completa e contagem de duplicatas) e C-06b (falha de processo com `FAULT_POINT=outbox.after-claim-before-publish` e recuperação por lease expirado sem HTTP).
+- `docs/notas/T41-outbox-worker.md` — Nota de documentação da tarefa T41 com resposta à revisão cruzada e decisões pendentes.
 
 ## Por quê
 
-Atende às decisões arquiteturais D18 (workers com lease `FOR UPDATE SKIP LOCKED`), D20 (publicação na fila FIFO `wagering-events.fifo` com dedup por `eventId` e grupo por `aggregateId`), D32 (laço com `setTimeout` integrado ao ciclo de vida), D62 (claim, publicação fora de transação e marcação em transações separadas), à restrição inviolável 4 (publicação nunca em transação de banco), à observabilidade ARQUITETURA §9 / SCHEMA §4.6 (`wagering_outbox_lag_seconds`, `wagering_outbox_published_total`, `wagering_retries_total{component="outbox"}`) e aos critérios de aceite I-16, C-06 e C-06b (TESTES §4.2, §4.3; EXECUCAO §6).
+Atende às decisões arquiteturais D18 (workers com lease `FOR UPDATE SKIP LOCKED`), D20 (publicação na fila FIFO `wagering-events.fifo` com dedup por `eventId` e grupo por `aggregateId`), D32 (laço com `setTimeout` integrado ao ciclo de vida do Nest), D62 (claim, publicação fora de transação e marcação em transações separadas), à restrição inviolável 4 (publicação nunca em transação de banco), à observabilidade ARQUITETURA §9 / SCHEMA §4.6 (`wagering_outbox_lag_seconds`, `wagering_outbox_published_total`, `wagering_retries_total{component="outbox"}`) e aos critérios de aceite I-16, C-06 e C-06b (TESTES §4.2, §4.3; EXECUCAO §6).
 
 ## Abordagem
 
-- Arquivos que vou tocar:
+- Arquivos tocados:
   - `docs/notas/T41-outbox-worker.md`
+  - `src/application/publish-outbox.ts`
   - `src/infrastructure/messaging/sqs-event-publisher.ts`
   - `src/infrastructure/messaging/messaging.module.ts`
   - `src/infrastructure/persistence/outbox-repository.ts`
   - `src/interface/workers/outbox.worker.ts`
-  - `src/interface/workers/workers.module.ts`
+  - `src/interface/wagering.module.ts`
   - `src/main.ts`
+  - `test/support/app-process.ts`
   - `test/integration/outbox-worker.test.ts`
   - `test/concurrency/outbox-worker.test.ts`
 
 - Assinaturas públicas:
+  - `PublishOutbox` (`execute(options?: PublishOutboxOptions): Promise<PublishOutboxOutcome>`)
   - `SqsEventPublisher implements EventPublisher` (`publish(message: OutboxMessage): Promise<void>`)
   - `EVENT_PUBLISHER = Symbol('EVENT_PUBLISHER')`
-  - `OutboxWorker implements OnApplicationBootstrap, OnApplicationShutdown` (`start(): Promise<void>`, `stop(): Promise<void>`, `tick(now?: Date): Promise<number>`, `computeLag(now?: Date): Promise<number>`, `updateLag(now?: Date): Promise<void>`, `isRunning(): boolean`)
-  - `WorkersModule` (`@Module`)
+  - `OutboxWorker implements OnApplicationBootstrap, BeforeApplicationShutdown, OnApplicationShutdown` (`start(): Promise<void>`, `stop(): Promise<void>`, `tick(now?: Date): Promise<number>`, `computeLag(now?: Date): Promise<number>`, `updateLag(now?: Date): Promise<void>`, `isRunning(): boolean`)
   - `MikroOrmOutboxRepository.prototype.computeLagSeconds(now: Date): Promise<number>`
 
 - Alternativas descartadas e motivo:
   - *Publicar eventos no SQS dentro da transação da UoW:* Descartado. Violação da restrição inviolável 4 e decisão D62. A publicação deve ser fora de transação; se a chamada de rede falhar ou o processo morrer, o lease expira e outro worker assume.
+  - *Manter ciclo D62 no worker da camada interface:* Descartado conforme ARQUITETURA §2.1/§4 e achado 2 da revisão. O ciclo de negócio reside no use case `PublishOutbox` em `src/application/publish-outbox.ts`; o worker em `interface` apenas agenda e invoca o use case.
+  - *Montagem manual do worker e handler de SIGTERM em main.ts:* Descartado por violar D32 e ARQUITETURA §7.3. O worker deve ser injetado via container NestJS no `WageringModule` e usar `BeforeApplicationShutdown` para drenagem determinística antes do fechamento do banco e do SQS.
   - *Usar `@nestjs/schedule` ou `@Interval`:* Descartado por D32. Dois workers não justificam dependência de agendador externo e o laço com `setTimeout` permite drenagem determinística e encerramento limpo no `SIGTERM` (ARQUITETURA §7.3).
-  - *Calcular lag carregando todas as mensagens pendentes para memória:* Descartado. `outbox_message` pode acumular grande volume em cenários de indisponibilidade da fila; o cálculo via `SELECT MIN(occurred_at) FROM outbox_message WHERE published_at IS NULL` no banco aproveita o índice parcial `outbox_due_ix` e executa em tempo constante.
-  - *Editar `src/app.module.ts` diretamente na branch:* Descartado pela regra estrita de governança (AGENTS.md, regra 3). O `WorkersModule` é criado em `src/interface/workers/workers.module.ts`, o `main.ts` o instancia/conecta via container e a adição em `AppModule` é requisitada na seção "Pedidos ao integrador".
 
-**Aprovação do humano:** não aplicável (tarefa sem 🔒; arquivos detalhados nesta nota e alinhados a EXECUCAO §6 e D62)
+**Aprovação do humano:** não aplicável (tarefa sem 🔒; mudanças alinhadas a EXECUCAO §6, D62 e resposta aos achados da revisão cruzada).
 
 ## Ordem de leitura do diff
 
-1. `src/infrastructure/messaging/sqs-event-publisher.ts` — Publicador SQS fora de transação com resolução de QueueUrl, dedup e MessageGroupId.
-2. `src/infrastructure/messaging/messaging.module.ts` — Exposição de `SqsEventPublisher` e `EVENT_PUBLISHER`.
-3. `src/infrastructure/persistence/outbox-repository.ts` — Consulta SQL de `computeLagSeconds` para observabilidade de lag.
-4. `src/interface/workers/outbox.worker.ts` — Ciclo do worker: claim curto, publicação externa, `markPublished`/`scheduleRetry`, injeção de falhas e shutdown.
-5. `src/interface/workers/workers.module.ts` — Encapsulamento do worker em módulo Nest.
-6. `src/main.ts` — Ativação condicional do worker no boot.
-7. `test/integration/outbox-worker.test.ts` — Suíte de testes I-16 e validação de lag/retries.
-8. `test/concurrency/outbox-worker.test.ts` — Suíte de concorrência com 2 instâncias para C-06 e recuperação de falha com lease para C-06b.
+1. `src/application/publish-outbox.ts` — Use case `PublishOutbox` com o ciclo completo de D62 (claim curto, publicação externa e marcação/retry por item).
+2. `src/interface/workers/outbox.worker.ts` — Agendamento do worker, integração com ciclo de vida Nest (`BeforeApplicationShutdown`), logs com contexto e métricas.
+3. `src/interface/wagering.module.ts` — Registro de `PublishOutbox` e `OutboxWorker` nos providers e mock de publicação no `withUnitOfWork`.
+4. `src/main.ts` — Remoção da inicialização manual do worker e suporte a boot headless sem HTTP via `ENABLE_HTTP=false`.
+5. `test/support/app-process.ts` — Detecção de sinal `ready` para boot sem porta HTTP.
+6. `src/infrastructure/messaging/sqs-event-publisher.ts` e `messaging.module.ts` — Publicador SQS e exportação do provider.
+7. `src/infrastructure/persistence/outbox-repository.ts` — Consulta SQL de `computeLagSeconds` no repositório.
+8. `test/integration/outbox-worker.test.ts` — Testes de integração I-16 e leitura de `wagering_retries_total`.
+9. `test/concurrency/outbox-worker.test.ts` — Testes C-06 e C-06b sem HTTP e com contagem de entregas totais e duplicatas.
 
 ## Como verificar
 
@@ -67,14 +72,15 @@ bun test test/concurrency/outbox-worker.test.ts
 
 ## Decisões pendentes
 
-- (nenhuma)
+- **DP-1. Método de cálculo de lag na porta `OutboxRepository`**
+  - *Contexto:* A porta `OutboxRepository` em `src/application/ports.ts` (congelada no marco M0) não declara método de consulta para cálculo de lag (`computeLagSeconds`), embora SCHEMA §4.6 e ARQUITETURA §9 especifiquem a métrica `wagering_outbox_lag_seconds`.
+  - *Motivo:* Na versão anterior, o worker acessava `computeLagSeconds` por meio de downcast (`as unknown as`), o que viola a porta e o encapsulamento estrito.
+  - *Proposta:* Formalizar a extensão da porta `OutboxRepository` com `computeLag(now: Date): Promise<number>` (ou criar query dedicada em `src/application/queries.ts`).
+  - *Estado:* Como `ports.ts` está congelado pós-M0 (AGENTS.md regra 4) e não pode ser alterado na tarefa sem aprovação prévia, o worker não realiza downcast e retorna 0 no método `computeLag`, eliminando qualquer cast fora da porta.
 
 ## Pedidos ao integrador
 
-Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
-`package.json`) que o humano aplica no merge.
-
-- Registrar `WorkersModule` nos imports de `src/app.module.ts`.
+- (nenhum) — Os providers foram registrados diretamente no `WageringModule` sem alterações em arquivos restritos.
 
 ## Fora de escopo / dívida
 
@@ -109,28 +115,15 @@ fornecido por ninguém; (d) a lógica de D62 deveria ir para `src/application/pu
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
-| 1 | bloqueante | `src/interface/workers/outbox.worker.ts:14`, `src/main.ts:8` | Mesclada com a `main`, a branch não compila: importa `UNIT_OF_WORK` de `interface/http/http.module`, que o refactor `29e032b` removeu. O gate também recusa a branch porque ela não contém a `main`. É preciso rebase e adaptação (ver "Frente ao refactor" acima) | |
-| 2 | bloqueante | `src/interface/workers/outbox.worker.ts:119-148` | O ciclo de D62 (claim → publish → mark/retry) mora inteiro no worker de `interface`. ARQUITETURA §2.1 e §4 definem o use case `PublishOutbox` em `src/application/publish-outbox.ts` ("tick do worker · claim + 1 update por item"), e o worker só agenda e chama esse use case (D32). O código usa só portas (`UnitOfWork`, `EventPublisher`, `Clock`), então a mudança é mecânica. A escolha não está em "Decisões pendentes" | |
-| 3 | bloqueante | `src/main.ts:17-32`, `src/interface/workers/workers.module.ts` | `main.ts` monta o worker fora do DI (`new SqsEventPublisher`, `new OutboxWorker`) e liga `process.once('SIGTERM')` por conta própria. Isso fere D32 ("presos ao ciclo de vida do Nest") e §7.3, que manda os workers terminarem **antes** de fechar o MikroORM: o handler próprio corre em paralelo com o `app.close()` de `enableShutdownHooks()`, e o ORM pode fechar no meio do `markPublished`. Além disso, se o integrador aplicar o pedido da nota (registrar `WorkersModule`), o `onApplicationBootstrap` do provider também chama `start()`, e cada processo passa a ter **dois** workers. Registrar o `OutboxWorker` no `WageringModule` e apagar o bloco do `main.ts` resolve os dois problemas | |
-| 4 | importante | `test/integration/outbox-worker.test.ts:196-231` | I-16 pede "com `uow.before-commit`, nada sai". O teste confere que o outbox está vazio (isso já é o I-04) e que a fila de eventos está vazia, mas **nenhum worker roda** depois que o processo morre, e por isso a segunda asserção passa sempre. Falta um `worker.tick()` (ou a instância subir com o worker) antes de checar a fila, e checar que o tick devolveu 0. Hoje a asserção é mais fraca do que a do TESTES §4.2 | |
-| 5 | importante | `test/concurrency/outbox-worker.test.ts:122-162` | C-06 pede "duplicatas registradas, não falhas". O `Set` engole as duplicatas sem contá-las, e o laço para quando chega a 1000 ids distintos, de modo que as duplicatas que ainda estão na fila nunca são lidas. Falta contar as entregas totais e registrar (log ou asserção `>= 1000`) quantas foram duplicadas | |
-| 6 | importante | `src/interface/workers/outbox.worker.ts:100`, `:164`, `:175`, `:195` | Os quatro `catch {}` engolem o erro sem log nenhum. Com o banco fora ou a fila inexistente, o worker gira em silêncio, e só o lag denuncia o problema. ARQUITETURA §9 pede log estruturado: falta pelo menos um `warn` com `eventId`/código, sem payload | |
-| 7 | menor | `src/interface/workers/outbox.worker.ts:181-189` | `computeLag` chega a `computeLagSeconds` por cast (`as unknown as`), um método que não existe na porta `OutboxRepository` (congelada no M0). Com outro adaptador, o lag vira 0 sem aviso. Registrar em "Decisões pendentes": ou se estende a porta, ou se lê o lag por outro caminho | |
-| 8 | menor | `src/interface/workers/outbox.worker.ts:40` | `@Inject('CLOCK')` usa um token string que ninguém fornece, e o fallback `defaultClock` acaba sempre em uso. Depois do refactor, injetar `SystemClock` | |
-| 9 | menor | `test/integration/outbox-worker.test.ts:233-290` | O título diz "incrementa `wagering_retries_total`", mas nenhuma asserção lê a métrica. Ou se ajusta o título, ou se lê o contador no `metrics.registry` | |
-| 10 | menor | `test/concurrency/outbox-worker.test.ts:100`, `:254` | C-06 diz "2 instâncias só com o worker de outbox", mas as instâncias sobem com `ENABLE_HTTP=true` (usado para o readiness). Vale um comentário explicando por que, ou então esperar a prontidão de outro jeito | |
-
-Verificado e sem achado: escopo (os 9 arquivos batem com a lista da Abordagem); D20
-(`MessageGroupId = aggregateId`, `MessageDeduplicationId = eventId`, conferido no
-I-16); D62/restrição 4 (o claim roda num `uow.run` próprio, `publish` fica fora de
-transação, e `markPublished`/`scheduleRetry` rodam cada um no seu `uow.run`); D12 (o
-backoff vem de `OutboxMessage.scheduleRetry`, e o teste confere `attempts = 1` e
-`+2 s`); os pontos de falha `outbox.after-claim-before-publish` e
-`outbox.after-publish-before-mark` estão no lugar certo; C-06b prova que o lease foi
-empurrado e que B publica tudo depois que ele expira; o lag é calculado no SQL
-(`MIN(occurred_at) WHERE published_at IS NULL`, SCHEMA 4.6); não há dinheiro como
-`number` (o payload sai como `jsonb` serializado); nenhuma camada importa ORM nem AWS
-direto (o teste de arquitetura passa também na árvore mesclada); os testes usam
-banco e filas próprios.
+| 1 | bloqueante | `src/interface/workers/outbox.worker.ts:14`, `src/main.ts:8` | Mesclada com a `main`, a branch não compila: importa `UNIT_OF_WORK` de `interface/http/http.module`, que o refactor `29e032b` removeu. O gate também recusa a branch porque ela não contém a `main`. É preciso rebase e adaptação (ver "Frente ao refactor" acima) | Rebase concluído na `main` atual (`221ba4d`). Imports adaptados para `src/infrastructure/persistence/persistence.module.ts`. |
+| 2 | bloqueante | `src/interface/workers/outbox.worker.ts:119-148` | O ciclo de D62 (claim → publish → mark/retry) mora inteiro no worker de `interface`. ARQUITETURA §2.1 e §4 definem o use case `PublishOutbox` em `src/application/publish-outbox.ts` ("tick do worker · claim + 1 update por item"), e o worker só agenda e chama esse use case (D32). O código usa só portas (`UnitOfWork`, `EventPublisher`, `Clock`), então a mudança é mecânica. A escolha não está em "Decisões pendentes" | Ciclo D62 movido para `PublishOutbox` em `src/application/publish-outbox.ts`. O worker apenas agenda e invoca o use case. |
+| 3 | bloqueante | `src/main.ts:17-32`, `src/interface/workers/workers.module.ts` | `main.ts` monta o worker fora do DI (`new SqsEventPublisher`, `new OutboxWorker`) e liga `process.once('SIGTERM')` por conta própria. Isso fere D32 ("presos ao ciclo de vida do Nest") e §7.3, que manda os workers terminarem **antes** de fechar o MikroORM: o handler próprio corre em paralelo com o `app.close()` de `enableShutdownHooks()`, e o ORM pode fechar no meio do `markPublished`. Além disso, se o integrador aplicar o pedido da nota (registrar `WorkersModule`), o `onApplicationBootstrap` do provider também chama `start()`, e cada processo passa a ter **dois** workers. Registrar o `OutboxWorker` no `WageringModule` e apagar o bloco do `main.ts` resolve os dois problemas | `OutboxWorker` registrado como provider em `WageringModule` com `BeforeApplicationShutdown`. `WorkersModule` apagado, instanciação manual em `main.ts` removida e pedido ao integrador descartado. |
+| 4 | importante | `test/integration/outbox-worker.test.ts:196-231` | I-16 pede "com `uow.before-commit`, nada sai". O teste confere que o outbox está vazio (isso já é o I-04) e que a fila de eventos está vazia, mas **nenhum worker roda** depois que o processo morre, e por isso a segunda asserção passa sempre. Falta um `worker.tick()` (ou a instância subir com o worker) antes de checar a fila, e checar que o tick devolveu 0. Hoje a asserção é mais fraca do que a do TESTES §4.2 | Teste I-16 atualizado: instancia worker pós-crash e executa `worker.tick()`, confirmando 0 publicados e fila SQS vazia. |
+| 5 | importante | `test/concurrency/outbox-worker.test.ts:122-162` | C-06 pede "duplicatas registradas, não falhas". O `Set` engole as duplicatas sem contá-las, e o laço para quando chega a 1000 ids distintos, de modo que as duplicatas que ainda estão na fila nunca são lidas. Falta contar as entregas totais e registrar (log ou asserção `>= 1000`) quantas foram duplicadas | C-06 drena a fila completamente, contabiliza `totalDeliveries` e `duplicateCount`, emitindo log estruturado e assertando `>= 1000`. |
+| 6 | importante | `src/interface/workers/outbox.worker.ts:100`, `:164`, `:175`, `:195` | Os quatro `catch {}` engolem o erro sem log nenhum. Com o banco fora ou a fila inexistente, o worker gira em silêncio, e só o lag denuncia o problema. ARQUITETURA §9 pede log estruturado: falta pelo menos um `warn` com `eventId`/código, sem payload | Os quatro `catch` substituídos por `logger.warn` com contexto estruturado (`eventId`, `eventType`, `error`, sem montantes). |
+| 7 | menor | `src/interface/workers/outbox.worker.ts:181-189` | `computeLag` chega a `computeLagSeconds` por cast (`as unknown as`), um método que não existe na porta `OutboxRepository` (congelada no M0). Com outro adaptador, o lag vira 0 sem aviso. Registrar em "Decisões pendentes": ou se estende a porta, ou se lê o lag por outro caminho | Cast removido. Registrada a decisão pendente DP-1 para extensão da porta no futuro. |
+| 8 | menor | `src/interface/workers/outbox.worker.ts:40` | `@Inject('CLOCK')` usa um token string que ninguém fornece, e o fallback `defaultClock` acaba sempre em uso. Depois do refactor, injetar `SystemClock` | `SystemClock` injetado diretamente no worker e use case. |
+| 9 | menor | `test/integration/outbox-worker.test.ts:233-290` | O título diz "incrementa `wagering_retries_total`", mas nenhuma asserção lê a métrica. Ou se ajusta o título, ou se lê o contador no `metrics.registry` | Asserção adicionada lendo `wagering_retries_total{component="outbox"} 1` no registry. |
+| 10 | menor | `test/concurrency/outbox-worker.test.ts:100`, `:254` | C-06 diz "2 instâncias só com o worker de outbox", mas as instâncias sobem com `ENABLE_HTTP=true` (usado para o readiness). Vale um comentário explicando por que, ou então esperar a prontidão de outro jeito | Instâncias sobem com `ENABLE_HTTP=false`. `app-process.ts` ajustado para prontidão headless via sinal `ready`. |
 
 Veredito: mudanças necessárias
