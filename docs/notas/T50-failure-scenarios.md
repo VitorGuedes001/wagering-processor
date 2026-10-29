@@ -101,7 +101,7 @@ testes de aceite existentes.
   (TESTES 3.4), e I-17 pede `docker pause`, proibido. Os dois ficam fora do
   aceite da T50 (EXECUCAO §6, PLANO linhas B7 e B11).
 
-**Aprovação do humano:** pendente
+**Aprovação do humano:** aprovada em 2026-10-29 (na conversa): Abordagem aceita como proposta, com DP-1 a DP-4 resolvidas conforme as propostas.
 
 ## Ordem de leitura do diff
 
