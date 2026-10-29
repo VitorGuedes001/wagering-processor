@@ -1,6 +1,6 @@
 # T32 — Harness de concorrência 🔒
 
-> Estado: Testada · Raia: C · Revisor: G · Branch: `t32-harness`
+> Estado: Revisada · Raia: C · Revisor: G · Branch: `t32-harness`
 
 ## O que muda
 
@@ -96,9 +96,30 @@ bun test test/concurrency
 
 ## Revisão cruzada
 
-Preenchido pelo agente da outra ferramenta.
+Revisão cruzada realizada conforme `.agents/skills/revisao-cruzada/SKILL.md` e `AGENTS.md`.
+
+### Resultado do gate
+```bash
+bun run tarefa:gate
+```
+- `typecheck`: aprovado (zero erros tsc no-emit)
+- `skills`: sincronizadas
+- `unidade`: 33/33 aprovados (test/unit)
+- `arquitetura`: 3/3 aprovados (test/architecture — sem vazamento de camadas nem violação 5.1 de dinheiro)
+- `integração`: 78/78 aprovados (incluindo I-04 atômico com interrupção por `uow.before-commit`)
+- `concorrência`: 5 aprovados, 4 pulados (concorrência e harness validados com processos reais e LocalStack/Postgres)
+- **Status do Gate**: 100% verde.
+
+### Pontos verificados
+- **Escopo**: Respeitado estritamente. Apenas os arquivos propostos na abordagem foram tocados. Arquivos congelados/proibidos (`package.json`, `app.module.ts`, `ports.ts`, etc.) não foram alterados.
+- **Harness de processos (`spawnApp` / `spawnCluster`)**: Inicializa processos reais via `Bun.spawn(['bun', 'src/main.ts'])`, extrai a porta real atribuída dinamicamente pelo SO a partir da linha JSON de log (`address.port`), aguarda 200 em `/health/ready` via `eventually` e fornece round-robin determinístico via `nextUrl()`. Encerramento limpo via `kill('SIGTERM' | 'SIGKILL')`.
+- **Portão de lock (`holdWalletLock`)**: Abre conexão dedicada via `db.connect()`, emite `BEGIN; SELECT id FROM wallet WHERE id = $1 FOR UPDATE`, consulta bloqueados com `wait_event_type = 'Lock'` em `pg_stat_activity`, provê polling determinístico com `waitForWaiters(n)` e libera com `COMMIT`.
+- **Injetor de falhas (`FaultInjector` e I-04)**: `hit('uow.before-commit')` invocado na `MikroOrmUnitOfWork.run` imediatamente antes do commit da transação. Teste I-04 demonstra que com a env ativa o processo é abortado via `SIGKILL` e zero linhas persistem nas 5 tabelas (`wallet`, `wager_transaction`, `wallet_ledger_entry`, `inbox_message`, `outbox_message`), enquanto no controle positivo tudo persiste atomicamente.
+- **Cenários C-01, C-02, C-02b e C-03**: Código dos testes implementado estritamente conforme TESTES §4.3 e invariantes financeiras de `MODELAGEM.md`.
+- **Restrições Invioláveis e Camadas**: Dinheiro manipulado estritamente como string na borda/testes e bigint/numeric nas camadas internas; sem mock de banco ou fila (Postgres e LocalStack reais); lock estritamente por wallet (sem lock global).
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
+| 1 | importante | `test/concurrency/concurrency.test.ts:77` | A condição de `test.skipIf(!routesAvailable)` foi avaliada em nível de módulo, onde `routesAvailable` é `false` no carregamento (antes de `beforeAll`). Isso atende ao requisito de isolamento antes da integração de T30/T31, mas na integração do marco M5 essa guarda estática deve ser removida para que C-01..C-03 executem plenamente contra as rotas entregues. | |
 
-Veredito: pendente
+Veredito: aprovado
