@@ -1,6 +1,10 @@
+import { InvalidTransactionStateError } from '../errors';
 import type { MoneyProps } from '../money';
-import { notImplemented } from '../not-implemented';
-import type { WagerTransaction, WagerTransactionKind } from '../wager-transaction';
+import {
+  type WagerTransaction,
+  WagerTransactionKind,
+  WagerTransactionStatus,
+} from '../wager-transaction';
 import { type EventContext, IntegrationEvent, type IntegrationEventProps } from './integration-event';
 
 /** Campos de provedor ausentes só no `OPENING` (D42). */
@@ -30,6 +34,48 @@ export class WagerTransactionProcessed extends IntegrationEvent<WagerTransaction
   }
 
   static from(transaction: WagerTransaction, ctx: EventContext): WagerTransactionProcessed {
-    return notImplemented('T13', transaction, ctx);
+    // Campos de provedor só podem faltar no `OPENING` (D42; SCHEMA 2.2, `wager_tx_provider_fields_ck`).
+    const missingProviderFields =
+      transaction.kind !== WagerTransactionKind.Opening &&
+      (transaction.providerId === undefined ||
+        transaction.externalTransactionId === undefined ||
+        transaction.roundId === undefined ||
+        transaction.gameId === undefined);
+    if (
+      transaction.status !== WagerTransactionStatus.Processed ||
+      transaction.balanceAfter === undefined ||
+      transaction.processedAt === undefined ||
+      missingProviderFields
+    ) {
+      throw new InvalidTransactionStateError(
+        `Cannot build WagerTransactionProcessed from transaction in status ${transaction.status}`,
+      );
+    }
+
+    return new WagerTransactionProcessed({
+      eventId: ctx.eventId,
+      aggregateId: transaction.id,
+      correlationId: ctx.correlationId,
+      ...(ctx.causationId !== undefined ? { causationId: ctx.causationId } : {}),
+      occurredAt: ctx.occurredAt,
+      data: {
+        transactionId: transaction.id,
+        ...(transaction.providerId !== undefined ? { providerId: transaction.providerId } : {}),
+        ...(transaction.externalTransactionId !== undefined
+          ? { externalTransactionId: transaction.externalTransactionId }
+          : {}),
+        walletId: transaction.walletId,
+        playerId: transaction.playerId,
+        ...(transaction.roundId !== undefined ? { roundId: transaction.roundId } : {}),
+        ...(transaction.gameId !== undefined ? { gameId: transaction.gameId } : {}),
+        kind: transaction.kind,
+        money: transaction.money.toJSON(),
+        ...(transaction.referenceTransactionId !== undefined
+          ? { referenceTransactionId: transaction.referenceTransactionId }
+          : {}),
+        balanceAfter: transaction.balanceAfter.toJSON(),
+        processedAt: transaction.processedAt.toISOString(),
+      },
+    });
   }
 }
