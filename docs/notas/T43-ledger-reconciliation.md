@@ -77,6 +77,8 @@ bun test test/unit test/architecture
 
 ## Decisões pendentes
 
+As duas foram aprovadas pelo humano em 2026-10-29, na integração, e registradas como D72 (TESTES §1) e D73 (ARQUITETURA §1).
+
 1. **Manutenção de teste de extrato como complementar sem ID de aceite I-20:** EXECUCAO §6 (Onda 4) atribui à tarefa T43 apenas o aceite I-21, tendo o PLANO §2.2 (linha B9) removido I-20 do escopo da tarefa. O cenário de extrato foi mantido na suíte como teste complementar de regressão para os endpoints implementados na T43, sem reivindicar o ID I-20 nem alegar concorrência real (já que as inserções entre requisições de páginas foram realizadas sequencialmente).
 2. **Localização de logs e métricas de reconciliação no controller HTTP vs use case:** ARQUITETURA §4 prevê que a divergência dispare log e métrica dentro do use case `ReconcileWallet`. No entanto, como `ports.ts` e as fronteiras de `application` estão congeladas pós-M0 (AGENTS.md regra 4), e a camada de aplicação não deve depender de classes concretas de infraestrutura (`AppLogger`, `MetricsRegistry`), optou-se por emitir log e métrica no `WalletsController`. Proposta para evolução futura: introduzir uma porta de telemetria formal em `src/application/ports.ts` após o descongelamento das portas ou via decorador de aplicação.
 
@@ -117,7 +119,7 @@ Veredito: mudanças necessárias
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
-| 7 | menor | src/interface/http/schemas.ts:46-61; src/application/queries.ts:4-21 | O cursor é aceito com qualquer `v` inteiro ≥ 0, mesmo que passe do `integer` de `ledger.wallet_version` (SCHEMA §ledger, linha 142, int4: até 2147483647). Um cursor forjado como `base64url({"v":3000000000})` (ou `1e20`) passa no schema, e o Postgres responde `value out of range for type integer`. Esse erro cai no ramo 5 do `HttpErrorFilter`, e o cliente recebe 500 `INTERNAL_ERROR` em vez de 400 `INVALID_PAYLOAD` (ARQUITETURA 6.2). Cliente honesto não chega nisso, porque só recebe cursores emitidos pelo servidor. Correção sugerida: limitar `v` a `<= 2147483647` no refinement e no `decodeCursor`, com um caso no teste. Detalhe: a validação está duplicada (`isValidCursor` e `decodeCursor`). Se o schema chamasse o `decodeCursor`, a regra ficaria num lugar só | |
+| 7 | menor | src/interface/http/schemas.ts:46-61; src/application/queries.ts:4-21 | O cursor é aceito com qualquer `v` inteiro ≥ 0, mesmo que passe do `integer` de `ledger.wallet_version` (SCHEMA §ledger, linha 142, int4: até 2147483647). Um cursor forjado como `base64url({"v":3000000000})` (ou `1e20`) passa no schema, e o Postgres responde `value out of range for type integer`. Esse erro cai no ramo 5 do `HttpErrorFilter`, e o cliente recebe 500 `INTERNAL_ERROR` em vez de 400 `INVALID_PAYLOAD` (ARQUITETURA 6.2). Cliente honesto não chega nisso, porque só recebe cursores emitidos pelo servidor. Correção sugerida: limitar `v` a `<= 2147483647` no refinement e no `decodeCursor`, com um caso no teste. Detalhe: a validação está duplicada (`isValidCursor` e `decodeCursor`). Se o schema chamasse o `decodeCursor`, a regra ficaria num lugar só | Corrigido pelo integrador em `7f2556a`: limite `<= 2147483647` em `decodeCursor`, que o schema HTTP passa a chamar (regra num lugar só), e caso 8 no teste de cursor inválido |
 
 Decisões pendentes novas, avaliadas segundo os docs:
 
