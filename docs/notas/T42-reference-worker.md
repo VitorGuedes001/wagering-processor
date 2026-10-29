@@ -9,11 +9,11 @@
 | `src/application/resolve-pending-references.ts` | novo use case `ResolvePendingReferences`, com `claim()` por lease e `resolve(id)` em uma transação por item |
 | `src/application/submit-wager-transaction.ts` | extrai `applyWagerDecision` (tabela de MODELAGEM 5) para o worker reusar, e o teto padrão do backoff passa a 5 min |
 | `src/interface/workers/pending-reference.worker.ts` | novo `PendingReferenceWorker`: laço `setTimeout`, desligamento que espera o ciclo, métricas e logs |
-| `src/interface/wagering.module.ts` | registra o use case e o worker, e passa a política de backoff da config ao submit e ao worker |
+| `src/interface/wagering.module.ts` | registra o use case e o worker, passa a política de backoff da config ao submit e ao worker, e `withUnitOfWork` desliga o worker (`ENABLE_REFERENCE_WORKER=false`), como a T40 já faz com o consumidor |
 | `src/infrastructure/config.ts` | `REFERENCE_BACKOFF_MAX_MS`, `REFERENCE_BATCH`, `REFERENCE_LEASE_MS` e `referenceBackoffFrom` |
 | `docs/ARQUITETURA.md` | §11 registra as variáveis novas |
 | `test/integration/reference-worker.test.ts` | I-18 e I-19 |
-| `test/concurrency/reference-worker.test.ts` | C-07 (`skipIf` até a T40) e C-07b (a) e (b) |
+| `test/concurrency/reference-worker.test.ts` | C-07 (por SQS, pelo consumidor da T40) e C-07b (a) e (b) |
 
 ## Por quê
 
@@ -233,15 +233,18 @@ Testes:
 3. `src/interface/workers/pending-reference.worker.ts`: o laço com
    `setTimeout`, o desligamento (para de agendar e espera o ciclo atual), o
    erro por item que não derruba o ciclo e as métricas de `record`.
-4. `src/interface/wagering.module.ts`: só a lista de providers, com a mesma
-   política de backoff no submit e no use case.
+4. `src/interface/wagering.module.ts`: a lista de providers, com a mesma
+   política de backoff no submit e no use case. Depois do rebase sobre a T40,
+   também a config de `withUnitOfWork`, que agora desliga o consumidor **e** o
+   worker (D28), para os testes HTTP em processo.
 5. `src/infrastructure/config.ts` e `docs/ARQUITETURA.md`: as três variáveis
    novas e `referenceBackoffFrom`.
 6. `test/integration/reference-worker.test.ts`: I-18 e I-19. No I-19, veja
    `reference_attempts = REFERENCE_MAX_ATTEMPTS` (D57) e o único
    `PendingReference`.
-7. `test/concurrency/reference-worker.test.ts`: o C-07 com `skipIf` pelo
-   arquivo do consumidor, e o C-07b (a)/(b) com portão e `REFERENCE_BATCH=1`.
+7. `test/concurrency/reference-worker.test.ts`: o C-07 por SQS (envelope de
+   CHALLENGE §10, `MessageGroupId = walletId`), sem `skipIf` desde o rebase, e
+   o C-07b (a)/(b) com portão e `REFERENCE_BATCH=1`.
 
 ## Como verificar
 
@@ -250,9 +253,18 @@ bun run tarefa:gate
 bun test test/integration/reference-worker.test.ts test/concurrency/reference-worker.test.ts --rerun-each 10
 ```
 
-Resultado em 2026-10-29: gate verde em typecheck, skills, unidade,
-arquitetura, integração (130 pass) e concorrência (11 pass, 1 skip = C-07).
-`--rerun-each 10` dos dois arquivos deu 40 pass e 10 skip, sem falha.
+Resultado em 2026-10-29, depois do rebase sobre a `main` com a T40
+(`63404d9`): gate verde em typecheck, skills, unidade (338), arquitetura (5),
+integração (136 pass) e concorrência (12 pass, **0 skip**: o C-07 rodou).
+`--rerun-each 10` dos dois arquivos novos deu 50 pass e 0 skip, sem falha.
+
+**C-07:** passa contra o `WagerTransactionConsumer` real, em 3 instâncias.
+O envelope de `anSqsEnvelope` passa no `parseEnvelope`
+(`wager-transaction.message.ts`): `messageId`, `type` e `occurredAt` ISO, e
+`data` com `idempotencyKey`. O `MessageGroupId` é o `walletId`
+(ARQUITETURA 7). As duas reversões ficam `PENDING_REFERENCE`, e depois as
+duas `PROCESSED`, com saldo final 1000.00 e um único `PendingReference` por
+transação.
 
 ## Decisões pendentes
 
@@ -328,12 +340,11 @@ Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
 - `wagering_pending_reference_age_seconds` não é alimentado (decisão 4):
   precisa de uma consulta nova em `WagerTransactionRepository`.
 - `wagering_lock_conflicts_total` não é alimentado pelo worker (decisão 6).
-- C-07 fica com `skipIf` até `src/interface/sqs/wager-transaction.consumer.ts`
-  (T40) existir. Ele **ainda não rodou**: depois do rebase sobre a T40, rodar
-  `bun run test:concurrency` e conferir o formato do envelope e o
-  `MessageGroupId` com o consumidor real.
-- A T40 entra primeiro e mexe em `submit-wager-transaction.ts`. O rebase da
-  T42 deve conflitar só no ponto da extração, e cabe à T42 resolvê-lo.
+- O rebase sobre a T40 está feito. Conflitou só `wagering.module.ts`, nos
+  imports, na lista de providers e em `withUnitOfWork`.
+  `submit-wager-transaction.ts` mesclou sem conflito: a extração continua
+  refactor puro, e a marcação da inbox nos retornos antecipados da T40 (D65)
+  ficou intacta.
 
 ## Revisão cruzada
 
@@ -353,6 +364,11 @@ O que verifiquei sem achado:
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
-| 1 | menor | `test/concurrency/reference-worker.test.ts:26-29` | O teste C-07 está condicionado a `skipIf(!CONSUMER_AVAILABLE)`. Como a T40 e a T42 foram desenvolvidas em paralelo, a execução efetiva de C-07 deve ocorrer após o rebase da branch sobre a T40 integrada na `main`. A nota já documenta esta condição na seção "Fora de escopo / dívida". | |
+| 1 | menor | `test/concurrency/reference-worker.test.ts:26-29` | O teste C-07 está condicionado a `skipIf(!CONSUMER_AVAILABLE)`. Como a T40 e a T42 foram desenvolvidas em paralelo, a execução efetiva de C-07 deve ocorrer após o rebase da branch sobre a T40 integrada na `main`. A nota já documenta esta condição na seção "Fora de escopo / dívida". | Resolvido. Rebase sobre a `main` com a T40 (`63404d9`). O `skipIf` saiu e o C-07 roda contra o consumidor real: `test:concurrency` 12 pass, 0 skip; `--rerun-each 10` 50 pass. Envelope e `MessageGroupId` conferidos com `wager-transaction.message.ts` |
+
+Resolução do achado 1 (Claude, após o rebase sobre `63404d9`): o C-07
+rodou e passou. O `skipIf` foi removido (`test(t42): ativa o C-07…`), porque
+um skip amarrado ao caminho de um arquivo esconderia o teste de aceite em
+silêncio se o arquivo mudasse de lugar.
 
 Veredito: aprovado com ressalvas
