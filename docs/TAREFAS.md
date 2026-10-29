@@ -33,7 +33,7 @@ a do worktree.
 | T33 Observabilidade base | 3 | G | T01 | Entregue | t33-observability | C | notas/T33-observability.md |
 | T40 Consumidor SQS 🔒 | 4 | C | T22, T30, T33 | Entregue | t40-sqs-consumer | G | notas/T40-sqs-consumer.md |
 | T41 Worker de outbox | 4 | G | T22, T33 | Proposta | t41-outbox-worker | C | — |
-| T42 Worker de referências | 4 | C | T30, T33 | Proposta | t42-reference-worker | G | — |
+| T42 Worker de referências | 4 | C | T30, T33 | Entregue | t42-reference-worker | G | notas/T42-reference-worker.md |
 | T43 Extrato e reconciliação | 4 | G | T20, T31 | Proposta | t43-ledger-reconciliation | C | — |
 | T50 Cenários de falha | 5 | C | T32, T40, T41 | Proposta | t50-failure-scenarios | G | — |
 | T51 Entrega | 5 | H | T42, T43, T50 | Proposta | t51-entrega | C | — |
