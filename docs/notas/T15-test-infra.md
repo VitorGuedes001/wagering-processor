@@ -111,3 +111,47 @@ Revisor: Claude (raia C), 28/10/2026, sobre `t15-test-infra` rebaseada na `main`
 **Constraints e triggers sem teste de violação com SQLSTATE e nome:** `wager_transaction_wallet_id_fkey`, `wager_transaction_reference_transaction_id_fkey` e `inbox_message_pkey` (tem teste, mas sem nome). `wager_tx_guard` está coberto em parte: falta o congelamento inteiro (D52). Os 8 triggers têm ao menos um teste.
 
 Veredito: mudanças necessárias
+
+## Revisão do retrabalho
+
+Revisor: Claude (raia C), 28/10/2026, sobre os commits `1be889b`, `6565e91`, `e52067d` e `d764929`. A branch está sobre a `main` atual (`3569e50`), e `src/` e `migrations/` são idênticos aos da `main`.
+
+**Execução:** `bun run tarefa:gate` ficou verde (typecheck, skills, unidade com 195 pass, arquitetura com 5 pass e 38 `expect()`, integração). `bun run test:integration` deu 19 pass, 0 fail e 201 `expect()`, em 4,6 s. Depois das execuções não sobrou nenhum banco `t_*`. O retrabalho só mexeu em `test/support/**`, `test/architecture/**`, `test/integration/schema.test.ts`, em `docs/TESTES.md` (D34, D60 e o pseudocódigo de 3.1, que é a D34) e na nota. Não achei asserção removida ou afrouxada: os blocos que saíram do diff de `schema.test.ts` foram movidos para `expectDeferredCommitError` ou reescritos com mais casos.
+
+**Provas feitas em banco próprio** (`t_rev…` clonado de `wagering_template_c8408875`, apagado no fim), por SQL cru e depois `assertAllWalletsConsistent`:
+
+- **Válido, passa:** wallet aberta com saldo `0.00` e `version = 1`, sem lançamento. Em seguida, `WIN 50` com o lançamento em `wallet_version = 2` (`0.00 → 50.00`), com os triggers ligados, e `BET 20` em `wallet_version = 3`. As três checagens passam.
+- **Inválidos, gravados com `session_replication_role = replica`:** `balance_before` errado no 2º lançamento (`60.00` em vez de `50.00`) é acusado em `[2]`. A versão fora de ordem (v3 gravada antes de v2) é acusada em `[2]`. O 1º lançamento com `balance_before = 10.00` é acusado em `[2]`, também quando o saldo da wallet bate com a soma, e em `[1]` quando não bate. A versão `0` nem chega a ser gravada, porque `ledger_wallet_version_positive_ck` a barra.
+- **D51:** um erro de trigger no Bun.SQL vem com `errno = '23000'` e `constraint` preenchido: `wallet_no_delete`, `wallet_version_rule` e, no `COMMIT` deferred, `wallet_ledger_match`. O campo `code` vem como `ERR_POSTGRES_SERVER_ERROR`. `expectPgError` usa `errno ?? code`, então pega o SQLSTATE certo. Com `constraint` vazio, `expect(undefined).toBe(nome)` falharia.
+
+| # | Situação | Evidência |
+|---|---|---|
+| 1 | resolvido | `invariants.ts:61-96`: compara `balance_before` com `COALESCE(lag(balance_after), 0)`, a ordem é por `wallet_version` e a versão só precisa ser estritamente crescente, sem 1..N. O caso válido e os 3 casos inválidos foram provados em banco próprio (acima). O teste novo `schema.test.ts:328` também adultera a cadeia e espera `[2]` |
+| 2 | resolvido | A regex em `architecture.test.ts:222` foi conferida por script. Pega `amount!: number`, `balance!: number`, `amount: string \| number`, `totalAmount: number`, `balanceAfter: number` e `amount : number`. Não dá falso positivo em `attempts: number`, `baseMs: number`, `walletVersion!: number` nem em `amount: string; version: number`. A-03 passa no `src/` da `main`. O auto-teste cobre `!:`, union e prefixo/sufixo. Resta o menor N2 |
+| 3 | resolvido | `expectPgError` (`schema.test.ts:25-53`) compara só `pgErr.constraint`. O Bun.SQL preenche o campo nos erros `RAISE … USING CONSTRAINT` (provado acima). Todas as 74 chamadas passam nome, menos a de `55P03`, que não tem constraint |
+| 4 | resolvido | `schema.test.ts:1992-2010`: `'23505', 'inbox_message_pkey'` |
+| 5 | resolvido | `schema.test.ts:647-693`: `23503` com `wager_transaction_wallet_id_fkey` e com `wager_transaction_reference_transaction_id_fkey`. Sem as FKs, o INSERT passaria |
+| 6 | resolvido | `schema.test.ts:1271-1593`: há UPDATE sem mexer em `status`. Em PROCESSED, mudam `balance_after`, `processed_at`, `updated_at` e `reference_transaction_id`. Em REJECTED, mudam `balance_after`, `failure_code` e `updated_at`. Em FAILED, mudam `failure_code` e `updated_at`. Todos esperam `wager_tx_guard`, então falhariam com uma guarda só de `status`, porque o trigger congela a linha inteira (`NEW IS DISTINCT FROM OLD`). O caminho válido é coberto: `PENDING_REFERENCE` → ela mesma (reagenda), → REJECTED, → PROCESSED e → FAILED. Resta o menor N3, sobre o texto da nota |
+| 7 | resolvido | `schema.test.ts:252-289`: depois do `down`, exige que `public` tenha só `mikro_orm_migrations`, zero funções em `pg_proc`, zero triggers não internos e zero índices fora de `mikro_orm_migrations`. Se `wallet_ledger_assert` sobrar, o teste falha |
+| 8 | resolvido | `preload.ts:10-13`: o nome é `wagering_template_` mais 8 hex do sha256 do caminho absoluto do worktree. É determinístico, então o mesmo worktree reaproveita o seu nome, e caminhos diferentes geram nomes diferentes. O `pg_terminate_backend`, o `DROP … FORCE` e o `CREATE … TEMPLATE` (`preload.ts:162-184`, `database.ts:75-81`) só usam `TEMPLATE_DB_NAME`. `dropTestDatabase` recusa qualquer nome `wagering_template*`. **Pendência de limpeza:** o banco antigo `wagering_template`, de nome fixo, ainda existe no Postgres. Não foi apagado. Ver N4 |
+| 9 | resolvido | `isAllowedDomainImport` (`architecture.test.ts:198-206`) aceita só `node:*` e relativos que resolvem em `src/domain`. O auto-teste rejeita `decimal.js`, `zod`, `@nestjs/common` etc. |
+| 10 | resolvido | A-02 não cita mais `zod` |
+| 11 | resolvido | A regex não diferencia maiúsculas e aceita prefixo e sufixo (`totalAmount`, `openingBalance`, `amountCents`). Ver N2 |
+| 12 | resolvido | `expectDeferredCommitError` (`schema.test.ts:80-101`) roda o trabalho, marca `workCompleted` e só espera o erro no `COMMIT`. É usado em `wallet_ledger_match` e `ledger_wallet_match` |
+| 13 | resolvido | `SET LOCAL lock_timeout = '2s'` e `elapsedMs >= 1800` (`schema.test.ts:2120-2135`) |
+| 14 | resolvido | `fixtures.ts:27, 44` usam `'BET'`. Os builders continuam no enum, o que é aceitável porque não são o oráculo literal |
+| 15 | resolvido | Uma criação parcial apaga as filas já criadas (`queues.ts:165-171`). `delete()` lança quando alguma remoção falha, salvo fila inexistente. `schema.test.ts:2029` exercita a criação e confere FIFO, `ContentBasedDeduplication`, `VisibilityTimeout = 30`, `RedrivePolicy` com o ARN da DLQ e `maxReceiveCount = 5`. Resta o menor N5 |
+| 16 | resolvido | `wallet_version_rule` cobre `id` e `created_at` (`schema.test.ts:563-599`). `wager_tx_guard` cobre as 14 colunas de identidade (`schema.test.ts:1477-1494`) |
+| 17 | resolvido | "Como verificar" não cita mais a falha anterior à T14. A linha 14 diz que cobre todas as FKs, o que agora é verdade (#5) |
+
+**Achados novos:**
+
+| # | Severidade | Arquivo:linha | Achado |
+|---|---|---|---|
+| N1 | menor | `test/architecture/architecture.test.ts:8, 120-160` | A isenção da guarda 5.1 ficou mais larga. Um comentário com `não é caminho de dinheiro` ou `guard-ignore-5.1` acima de um bloco isenta o bloco inteiro. Conferido por script: um JSDoc acima de `class WalletRecord { balance!: number; amount!: number; }` zera as violações. Sem `;`, a isenção pendente atravessa linhas: `// não é caminho de dinheiro` seguido de `const a = 1`, `const b = parseFloat(x)` e `const c = Number(y)`, sem ponto e vírgula, não acusa nada. ARQUITETURA 8 pede "comentário de exceção explícito", e a isenção de função é necessária para `nextAttemptAt` em `src/domain/wager-transaction.ts:408`. Ainda assim, o auto-teste não prova onde a isenção termina. Sugestão: limitar a isenção a funções, ou a uma linha, e acrescentar uma amostra negativa com `class` e uma sem `;` |
+| N2 | menor | `test/architecture/architecture.test.ts:222` | A regex por substring tem falso positivo possível em `balanceVersion: number` ou `moneyCount: number`, que hoje não existem em `src/`. Tem também falso negativo em `balances: Record<string, number>` (para na vírgula) e em tipo quebrado em várias linhas. Ambos ficam fora da letra de ARQUITETURA 8 |
+| N3 | menor | `docs/notas/T15-test-infra.md:98` (resolução do #6) | A nota diz que testou `balance_after`, `processed_at`, `failure_code`, `reference_transaction_id` e `updated_at` "em PROCESSED, REJECTED e FAILED". O código só testa um subconjunto por status (ver a linha 6 acima). Não é lacuna real, porque o trigger compara a linha inteira, mas o texto diz mais do que o código faz |
+| N4 | menor | Postgres compartilhado | O banco antigo `wagering_template` (nome fixo, anterior à D60) ficou órfão. Os templates `wagering_template_<hash>` de worktrees removidos também vão se acumular, porque nada os apaga e a D60 não diz quem limpa. É pendência de limpeza para o humano ou o integrador. O revisor não apagou nada |
+| N5 | menor | `test/support/queues.ts:143` | `deleted = true` é gravado antes da tentativa. Depois de um `delete()` que lança, uma segunda chamada não tenta de novo e as filas vazam |
+
+Veredito: aprovado com ressalvas
