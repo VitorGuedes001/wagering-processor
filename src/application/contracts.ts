@@ -114,7 +114,7 @@ export interface LedgerEntryView {
 
 export interface LedgerPageView {
   items: LedgerEntryView[];
-  nextCursor: number | null;
+  nextCursor: string | null;
 }
 
 export interface ReconciliationView {

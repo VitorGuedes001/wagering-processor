@@ -1,9 +1,33 @@
 import type { LedgerEntryView, LedgerPageView, TransactionView, WalletView } from './contracts';
 import type { UnitOfWork } from './ports';
 
+export function decodeCursor(cursor?: string): number {
+  if (!cursor) return 0;
+  try {
+    const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    if (
+      typeof decoded === 'object' &&
+      decoded !== null &&
+      !Array.isArray(decoded) &&
+      typeof decoded.v === 'number' &&
+      Number.isInteger(decoded.v) &&
+      decoded.v >= 0
+    ) {
+      return decoded.v;
+    }
+  } catch {
+    // fall through
+  }
+  throw new Error('Invalid cursor format');
+}
+
+export function encodeCursor(walletVersion: number): string {
+  return Buffer.from(JSON.stringify({ v: walletVersion }), 'utf8').toString('base64url');
+}
+
 export interface WalletQueriesPort {
   findById(id: string): Promise<WalletView | undefined>;
-  getLedger(walletId: string, afterVersion: number, limit: number): Promise<LedgerPageView | undefined>;
+  getLedger(walletId: string, cursor: string | undefined, limit: number): Promise<LedgerPageView | undefined>;
 }
 
 export interface TransactionQueriesPort {
@@ -30,7 +54,8 @@ export class ApplicationWalletQueries implements WalletQueriesPort {
     });
   }
 
-  async getLedger(walletId: string, afterVersion: number, limit: number): Promise<LedgerPageView | undefined> {
+  async getLedger(walletId: string, cursor: string | undefined, limit: number): Promise<LedgerPageView | undefined> {
+    const afterVersion = decodeCursor(cursor);
     return this.uow.readSnapshot(async (tx) => {
       const wallet = await tx.wallets.findById(walletId);
       if (!wallet) return undefined;
@@ -48,7 +73,7 @@ export class ApplicationWalletQueries implements WalletQueriesPort {
       }));
 
       const lastItem = items[items.length - 1];
-      const nextCursor = items.length === limit && lastItem ? lastItem.walletVersion : null;
+      const nextCursor = items.length === limit && lastItem ? encodeCursor(lastItem.walletVersion) : null;
 
       return {
         items,
