@@ -2,7 +2,9 @@ import { defineConfig } from '@mikro-orm/postgresql';
 import { ReflectMetadataProvider } from '@mikro-orm/decorators/legacy';
 import { Migrator } from '@mikro-orm/migrations';
 import { loadConfig } from '../config';
+import { InboxMessageRecord } from './records/inbox-message.record';
 import { LedgerEntryRecord } from './records/ledger-entry.record';
+import { OutboxMessageRecord } from './records/outbox-message.record';
 import { WagerTransactionRecord } from './records/wager-transaction.record';
 import { WalletRecord } from './records/wallet.record';
 
@@ -17,7 +19,7 @@ export default defineConfig({
 
   // Descoberta explícita: nada de varrer pastas.
   // Com Bun, o scan de .ts via ts-morph costuma ser a primeira coisa a quebrar.
-  entities: [WalletRecord, LedgerEntryRecord, WagerTransactionRecord],
+  entities: [WalletRecord, LedgerEntryRecord, WagerTransactionRecord, InboxMessageRecord, OutboxMessageRecord],
   metadataProvider: ReflectMetadataProvider,
 
   extensions: [Migrator],
