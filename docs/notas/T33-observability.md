@@ -1,6 +1,6 @@
 # T33 — Observabilidade base
 
-> Estado: Testada · Raia: G · Revisor: C · Branch: `t33-observability`
+> Estado: Revisada · Raia: G · Revisor: C · Branch: `t33-observability`
 
 ## O que muda
 
@@ -74,5 +74,28 @@ Preenchido pelo agente da outra ferramenta.
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
+| — | — | — | Nenhum achado bloqueante, importante ou menor | — |
 
-Veredito: pendente
+O que foi verificado e está conforme:
+
+- **Gate.** `bun run tarefa:gate` passou 100% verde (typecheck, skills, unidade, arquitetura e integração; 86 testes, 677 asserções).
+- **Escopo.** Modificados unicamente os 6 arquivos de implementação e testes autorizados pelo briefing e nota (`logger.ts`, `metrics.ts`, `observability.module.ts`, `metrics.controller.ts`, `metrics.module.ts`, `observability.test.ts`), além da própria nota. Mudanças em arquivos de alto conflito (`app.module.ts`) foram devidamente delegadas ao integrador.
+- **Camadas e imports.** `src/infrastructure/observability` não importa `src/interface`. `src/interface/http` importa apenas de `infrastructure/observability` e `@nestjs/common` (sem MikroORM ou AWS SDK diretamente). Os testes de arquitetura da suíte passaram sem ressalvas.
+- **Logger JSON com ALS (ARQUITETURA §9, D29).** `AppLogger` implementa `LoggerService` emitindo linhas JSON com timestamps ISO e nível de severidade. Contexto de rastreabilidade (`correlationId`, `messageId`, `transactionId`, `walletId`, `providerId`, `kind`, `status`, `failureCode`) é gerenciado de forma segura via `AsyncLocalStorage<LogContext>`, sem uso indevido para transações SQL (D25).
+- **Restrição 5.1 e I-23 (dinheiro nunca em log).** Implementação de `sanitizeLogData` e `FORBIDDEN_KEY_PATTERN` remove de forma estrita e recursiva qualquer propriedade relacionada a dinheiro (`amount`, `balance`, `balanceBefore`, `balanceAfter`, `money`) tanto em metadados de objetos quanto na mensagem formatada (redação para `[REDACTED]`). Nenhum float, `Number()`, `parseFloat()` ou `toFixed()` utilizado.
+- **Registry de Métricas (ARQUITETURA §9, D30).** `MetricsRegistry` encapsula `@prometheus-io/client` com todas as métricas obrigatórias da especificação:
+  - `wagering_transactions_total{kind,status}` (Counter)
+  - `wagering_duplicates_total{source=http|inbox}` (Counter)
+  - `wagering_retries_total{component}` (Counter)
+  - `wagering_dlq_total` (Counter)
+  - `wagering_lock_conflicts_total` (Counter)
+  - `wagering_outbox_lag_seconds` (Gauge)
+  - `wagering_processing_duration_seconds{entry}` (Histogram)
+  - `wagering_reconciliation_mismatch_total` (Counter)
+  e métricas auxiliares de requisições HTTP e integração SQS.
+- **Endpoint HTTP `/metrics` (ARQUITETURA §9, §6.3).** Controller em `GET /metrics` responde status 200 com cabeçalho `Content-Type: text/plain; version=0.0.4; charset=utf-8` e corpo contendo métricas no padrão Prometheus.
+- **Testes de Aceite I-22 e I-23.** Testes robustos e autênticos executados em `test/integration/observability.test.ts`:
+  - I-22: Verifica `/health/ready` retornando 200 quando dependências estão saudáveis e 503 com status degraded quando Postgres ou SQS falham, além de testar registro e saída de métricas em servidor Nest real.
+  - I-23: Verifica que o logger JSON popula os campos de correlação e rastreabilidade, isola tarefas assíncronas concorrentes sem vazamento entre requisições paralelas, e confirma a omissão/redação total de `amount` e `balance`.
+
+Veredito: aprovado
