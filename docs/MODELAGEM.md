@@ -225,7 +225,7 @@ Ordem das verificações. A primeira que falha decide, e a ordem é fixa para o
 | 1 | wallet pertence ao `playerId` | `WALLET_PLAYER_MISMATCH` |
 | 2 | moeda da operação = moeda da wallet | `CURRENCY_MISMATCH` |
 | 3 | referência informada existe | `AWAIT_REFERENCE` (ou `REFERENCE_NOT_FOUND` se as tentativas acabaram) |
-| 4 | referência está `PENDING` ou `PENDING_REFERENCE` | `AWAIT_REFERENCE` |
+| 4 | referência está `PENDING` ou `PENDING_REFERENCE` | `AWAIT_REFERENCE` (ou, com as tentativas esgotadas, segue para o 5 e vira `REFERENCE_NOT_PROCESSED`, D61) |
 | 5 | referência está `PROCESSED` | `REFERENCE_NOT_PROCESSED` |
 | 6 | kind da referência é permitido (4.2) | `REFERENCE_KIND_NOT_ALLOWED` |
 | 7 | mesma wallet, player, moeda e rodada | `REFERENCE_CONTEXT_MISMATCH` |
