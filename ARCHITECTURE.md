@@ -10,7 +10,76 @@ _A escrever no B12._ Fonte: [docs/ARQUITETURA.md](docs/ARQUITETURA.md) §2.
 
 ## 2. Modelo de domínio e `Money`
 
-_A escrever no B1._ Fonte: [docs/MODELAGEM.md](docs/MODELAGEM.md).
+Detalhe em [docs/MODELAGEM.md](docs/MODELAGEM.md). Código em `src/domain/`: TypeScript
+puro, sem Nest, ORM, AWS SDK ou zod. O teste de arquitetura A-01 garante isso com uma
+lista branca de imports.
+
+### `Money`
+
+- **Representação:** centavos em `bigint` (D8), e não `decimal.js`. A escala é fixa em 2
+  casas (§6.1), então um inteiro na unidade mínima é exato, nativo e sem dependência.
+- **Sem arredondamento:** mais de 2 casas é rejeitado (D9). Não há multiplicação nem
+  divisão no domínio, então nada produz casa extra.
+- **Entrada estrita:** regex `^(0|[1-9]\d*)\.\d{2}$`. Rejeita `25`, `25.5`, `1e3`,
+  `+5.00`, `-5.00` e **número JSON** (`"amount": 25`), que já chega como `number` depois
+  do `JSON.parse`.
+- **Parse e formatação só textuais:** `BigInt(inteiro) * 100n + BigInt(centavos)` na ida;
+  `/ 100n`, `% 100n` e `padStart` na volta. Nenhum caminho passa por float.
+- **Dois construtores:** `from` é o contrato de entrada e rejeita negativo.
+  `fromPersistence` lê o banco e aceita negativo, porque a `difference` da reconciliação
+  pode ser negativa.
+- **Guarda estática (A-03):** um teste varre `src/domain` e `src/infrastructure/persistence`
+  e falha com `parseFloat`, `Number(`, `toFixed`, `Math.` ou propriedade de dinheiro
+  tipada `number`.
+
+### Entidades e invariantes
+
+| Entidade | Invariante que o desenho torna estrutural |
+|---|---|
+| `Wallet` (aggregate root) | `debit`/`credit` **devolvem o lançamento**: não existe caminho que muda saldo sem produzir ledger. `version` começa em 1 e só sobe com o saldo, e o `OPENING` não incrementa |
+| `WalletLedgerEntry` | sem campos mutáveis e sem métodos de transição. `create` valida `antes ± valor = depois`, moeda única e não-negatividade (D58) |
+| `WagerTransaction` | transições explícitas (MODELAGEM 4.3): terminal → qualquer coisa lança `InvalidTransactionStateError`. Guarda o snapshot do saldo no desfecho (D10), para o replay devolver o saldo "daquele momento" (§7.7) |
+
+Todas usam construtor privado com factories (`create`/`open`/`opening`) e `rehydrate`,
+que reconstrói do banco sem revalidar transições (§6.0).
+
+### A regra de negócio como função pura
+
+`decideWager(transação, wallet, referência, jáRevertida, backoff)` devolve `APPLY`,
+`REJECT` com `failureCode` ou `AWAIT_REFERENCE`. As 10 verificações de §7 rodam numa
+**ordem fixa**, e a primeira falha decide: o mesmo caso sempre produz o mesmo código.
+
+- **Por que função pura:** a regra envolve três objetos e não pertence a nenhum deles.
+  Sendo pura, HTTP, SQS e o worker de referências usam o mesmo caminho, e cada linha
+  de §7 é testável sem banco.
+- **Prova da ordem:** a revisão trocou 4 pares de regras vizinhas numa cópia do código,
+  e cada troca quebrou de 1 a 5 testes.
+- **Decisões que ela fixa:**
+  - D1: uma transação é revertida no máximo uma vez, por qualquer kind. Lido ao pé da
+    letra, §7.4 permitiria `REFUND` **e** `ROLLBACK` da mesma `BET`.
+  - D2: `WIN`/`LOSS` com referência seguem as mesmas verificações de referência.
+  - D3: `LOSS` aceita `0.00`.
+  - D61: referência ainda pendente quando as tentativas acabam é rejeitada com
+    `REFERENCE_NOT_PROCESSED`, e nunca espera além do limite.
+- **Ressalva:** "função pura" vale para a **decisão**. Correção sob concorrência depende
+  de ela ser chamada com a wallet travada (`SELECT … FOR UPDATE`), o que é papel do use
+  case e da Unit of Work (seções 3 e 5, ondas 2 e 3).
+
+### `payloadHash` e eventos
+
+- **`payloadHash`:** SHA-256 de um JSON canônico (chaves ordenadas, opcionais omitidos)
+  dos campos de negócio de MODELAGEM 9.1. Copia só esses campos, então passar o comando
+  inteiro, com `idempotencyKey` e `correlationId`, não muda o hash. A mesma operação por
+  HTTP ou por SQS gera o mesmo hash.
+- **Eventos:** `eventType` e `version` vivem no tipo de cada subclasse, nunca numa string
+  no call site, e `data` só leva `MoneyProps`, com string (§11). Um `bigint` que vazasse
+  faria o `JSON.stringify` lançar, e não passar calado.
+
+### Cobertura
+
+338 testes de unidade, **sem test double do domínio**: todos montam objetos pelas
+factories reais. Duas tarefas chegaram a usar `Money` falso para contornar dependências
+ainda não integradas, e isso foi removido na revisão.
 
 ## 3. ORM, mapeamento e estratégia transacional
 
@@ -18,7 +87,69 @@ _A escrever no B3._ Fonte: [docs/SCHEMA.md](docs/SCHEMA.md) §7, [docs/ARQUITETU
 
 ## 4. Schema e garantias no banco
 
-_A escrever no B2._ Fonte: [docs/SCHEMA.md](docs/SCHEMA.md) §2–3.
+Detalhe em [docs/SCHEMA.md](docs/SCHEMA.md). São 3 migrations reversíveis em `migrations/`.
+
+**Princípio (restrição 9):** o domínio verifica primeiro, para devolver um `failureCode`
+útil. O banco verifica de novo, e é ele que impede o estado errado quando o código tem
+bug ou quando alguém mexe por SQL.
+
+### Tabelas
+
+`wallet`, `wager_transaction`, `wallet_ledger_entry`, `inbox_message` e `outbox_message`.
+Todo dinheiro é `numeric(19,2)` e chega ao domínio como string exata.
+
+### O que é constraint simples
+
+| Garantia | Como |
+|---|---|
+| saldo e lançamentos nunca negativos | `CHECK` em `wallet.balance`, `balance_before`, `balance_after` |
+| uma wallet por player e moeda | `UNIQUE (player_id, currency)` |
+| idempotência por provedor (D4) | `UNIQUE (provider_id, idempotency_key)` e `(provider_id, external_transaction_id)` |
+| uma reversão por referência (D1) | índice único parcial em `reference_transaction_id` para `REFUND`/`ROLLBACK` `PROCESSED` |
+| no máximo um lançamento por transação | `UNIQUE (transaction_id)` no ledger |
+| lost update vira violação | `UNIQUE (wallet_id, wallet_version)` no ledger (D16): dois lançamentos derivados do mesmo saldo colidem |
+| ledger, wallet e transação na mesma moeda e wallet | FKs compostas `(wallet_id, currency)` e `(transaction_id, wallet_id, currency)` |
+| campos coerentes com o status | `CHECK`s "existe se e somente se": `failure_code` em `REJECTED`/`FAILED`, `balance_after`, `processed_at`, agenda de referência |
+| `OPENING` é interno | `num_nulls(campos de provedor) = 6` para `OPENING` e `0` para os outros kinds |
+
+### O que exige trigger
+
+Um `CHECK` olha só uma linha. O que envolve histórico ou mais de uma tabela vai em
+trigger. Todos lançam SQLSTATE `23000` com o nome do trigger no campo `constraint` do
+erro (D51), para o teste e o log saberem qual garantia disparou.
+
+| Trigger | Garante |
+|---|---|
+| `ledger_immutable`, `ledger_no_truncate` | ledger append-only (§5.5) |
+| `ledger_chain` | cada lançamento continua o saldo do anterior, ou parte de 0 |
+| `wallet_version_rule` | saldo mudou ⇔ `version + 1`; identidade da wallet não muda |
+| `wallet_ledger_match` + `ledger_wallet_match` (D53) | **deferred**: no commit, o saldo da wallet e o último lançamento batem nos dois sentidos |
+| `wallet_no_delete` | wallet não é apagada |
+| `wager_tx_guard` | transição só a partir de estado permitido, e transação terminal congelada inteira (D52) |
+
+O par deferred é o que transforma "toda mudança de saldo tem lançamento" (§6.2) numa
+garantia do banco. O commit falha tanto para saldo sem lançamento quanto para lançamento
+sem saldo.
+
+### Trade-offs
+
+- **Triggers custam leitura por escrita:** uma busca por índice único por commit e uma
+  por lançamento. É aceito: a escrita financeira é a operação rara e cara, e o ganho é
+  invariante garantido mesmo com bug.
+- **`TRUNCATE` bloqueado complica os testes.** Por isso cada arquivo de teste usa um banco
+  próprio, clonado de um template por worktree (D34, D60), em vez de limpar tabelas.
+- **A primeira wallet sem saldo começa sem lançamento.** O primeiro movimento sai na
+  `wallet_version = 2`. A cadeia é conferida por saldo, não por contiguidade de versão.
+
+### Prova
+
+19 testes de integração contra Postgres real (TESTES I-01 e I-02):
+- I-01 roda as migrations `up → down → up` e confere que o `down` não deixa função,
+  trigger nem índice para trás;
+- I-02 viola cada constraint, FK e trigger por SQL cru, conferindo SQLSTATE **e** nome.
+
+A demo [`scripts/demo-schema.sql`](scripts/demo-schema.sql) mostra cinco desses casos
+manualmente.
 
 ## 5. Concorrência
 

@@ -47,8 +47,8 @@ o limite de 4 agentes ativos e 3 tarefas esperando revisão (EXECUCAO §6).
 | Marco | Fecha quando | Tag | Estado |
 |---|---|---|---|
 | M0 | T01 | `m0-contratos` | fechado em 28/10/2026 |
-| M1 | T10–T13, T16 | `m1-dominio` | — |
-| M2 | T14, T15 | `m2-schema` | — |
+| M1 | T10–T13, T16 | `m1-dominio` | fechado em 28/10/2026 |
+| M2 | T14, T15 | `m2-schema` | fechado em 28/10/2026 |
 | M3 | T20–T22 | `m3-persistencia` | — |
 | M4 | T30, T31 | `m4-fatia-vertical` | — |
 | M5 | T32 + C-01, C-02, C-02b, C-03 verdes em `test:stress` | `m5-concorrencia` | — |
