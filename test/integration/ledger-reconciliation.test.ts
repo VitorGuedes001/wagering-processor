@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { ReflectMetadataProvider } from '@mikro-orm/decorators/legacy';
 import { defineConfig, MikroORM } from '@mikro-orm/postgresql';
-import { Global, type INestApplication, Module } from '@nestjs/common';
+import { type INestApplication, Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { RequestErrorCode } from '../../src/application/contracts';
 import { AppLogger } from '../../src/infrastructure/observability/logger';
@@ -21,11 +21,15 @@ import {
 } from '../../src/infrastructure/persistence/unit-of-work';
 import { MikroOrmWagerTransactionRepository } from '../../src/infrastructure/persistence/wager-transaction-repository';
 import { MikroOrmWalletRepository } from '../../src/infrastructure/persistence/wallet-repository';
-import { HttpModule } from '../../src/interface/http/http.module';
+import { WageringModule } from '../../src/interface/wagering.module';
 import { createTestDatabase, type TestDatabase } from '../support/database';
 import { getTestInfraConfig } from '../support/preload';
 
-describe('T43 — Extrato e reconciliação (I-20 e I-21)', () => {
+function encodeCursor(version: number): string {
+  return Buffer.from(JSON.stringify({ v: version })).toString('base64url');
+}
+
+describe('T43 — Extrato e reconciliação (I-21 e teste complementar de extrato)', () => {
   let db: TestDatabase;
   let orm: MikroORM;
   let uow: MikroOrmUnitOfWork;
@@ -68,25 +72,16 @@ describe('T43 — Extrato e reconciliação (I-20 e I-21)', () => {
 
     uow = new MikroOrmUnitOfWork(orm, { DB_LOCK_TIMEOUT_MS: 2000 }, factories);
 
-    testMetrics = new MetricsRegistry();
-    const testLogger = new AppLogger((line) => capturedLogs.push(line));
-
-    @Global()
     @Module({
-      providers: [
-        { provide: MetricsRegistry, useValue: testMetrics },
-        { provide: AppLogger, useValue: testLogger },
-      ],
-      exports: [MetricsRegistry, AppLogger],
-    })
-    class TestObservabilityModule {}
-
-    @Module({
-      imports: [TestObservabilityModule, HttpModule.forRoot(uow)],
+      imports: [WageringModule.withUnitOfWork(uow)],
     })
     class TestAppModule {}
 
     app = await NestFactory.create(TestAppModule, { logger: false });
+    testMetrics = app.get(MetricsRegistry);
+    const appLogger = app.get(AppLogger);
+    appLogger.setWriter((line) => capturedLogs.push(line));
+
     await app.listen(0);
 
     const server = app.getHttpServer();
@@ -104,45 +99,35 @@ describe('T43 — Extrato e reconciliação (I-20 e I-21)', () => {
   async function apiRequest(
     method: 'GET' | 'POST',
     path: string,
-    options: {
-      body?: unknown;
-      headers?: Record<string, string>;
-    } = {},
+    body?: unknown,
+    headers?: Record<string, string>,
   ) {
-    const headers: Record<string, string> = {
-      'content-type': 'application/json',
-      ...(options.headers || {}),
-    };
-
     const res = await fetch(`${baseUrl}${path}`, {
       method,
-      headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      headers: {
+        'content-type': 'application/json',
+        ...headers,
+      },
+      body: body ? JSON.stringify(body) : undefined,
     });
-
-    let json: any = undefined;
-    const text = await res.text();
-    if (text.length > 0) {
-      try {
-        json = JSON.parse(text);
-      } catch {
-        json = text;
-      }
+    const responseText = await res.text();
+    let parsedBody: any;
+    try {
+      parsedBody = JSON.parse(responseText);
+    } catch {
+      parsedBody = responseText;
     }
-
     return {
       status: res.status,
       headers: res.headers,
-      body: json,
+      body: parsedBody,
     };
   }
 
-  async function createWallet(playerId: string, initialAmount: string = '100.00', currency: string = 'BRL') {
+  async function createWallet(playerId: string, initialBalance: string, currency = 'BRL') {
     return apiRequest('POST', '/wallets', {
-      body: {
-        playerId,
-        initialBalance: { amount: initialAmount, currency },
-      },
+      playerId,
+      initialBalance: { amount: initialBalance, currency },
     });
   }
 
@@ -152,34 +137,26 @@ describe('T43 — Extrato e reconciliação (I-20 e I-21)', () => {
     kind: 'BET' | 'WIN' | 'LOSS' | 'REFUND' | 'ROLLBACK';
     amount: string;
     currency?: string;
-    providerId?: string;
-    externalTransactionId?: string;
     referenceExternalTransactionId?: string;
   }) {
-    const providerId = params.providerId ?? 'provider-test';
-    const externalTransactionId = params.externalTransactionId ?? randomUUID();
-    const idempotencyKey = `${providerId}:${externalTransactionId}`;
-
+    const extId = randomUUID();
     return apiRequest('POST', '/wagering/transactions', {
-      headers: {
-        'Idempotency-Key': idempotencyKey,
-      },
-      body: {
-        providerId,
-        externalTransactionId,
-        playerId: params.playerId,
-        walletId: params.walletId,
-        roundId: randomUUID(),
-        gameId: 'test-game',
-        kind: params.kind,
-        money: { amount: params.amount, currency: params.currency ?? 'BRL' },
-        referenceExternalTransactionId: params.referenceExternalTransactionId,
-      },
+      providerId: 'test-provider',
+      externalTransactionId: extId,
+      playerId: params.playerId,
+      walletId: params.walletId,
+      roundId: randomUUID(),
+      gameId: 'test-game',
+      kind: params.kind,
+      money: { amount: params.amount, currency: params.currency ?? 'BRL' },
+      referenceExternalTransactionId: params.referenceExternalTransactionId,
+    }, {
+      'Idempotency-Key': `idemp-${extId}`,
     });
   }
 
-  describe('I-20: Extrato com paginação por cursor estável (§9)', () => {
-    test('validação de parâmetros de query rejeita limit inválido ou afterVersion negativo com 400 INVALID_PAYLOAD', async () => {
+  describe('Extrato com paginação por cursor estável (teste complementar)', () => {
+    test('validação de parâmetros de query rejeita limit inválido com 400 INVALID_PAYLOAD', async () => {
       const walletId = randomUUID();
 
       const r1 = await apiRequest('GET', `/wallets/${walletId}/ledger?limit=0`);
@@ -190,13 +167,54 @@ describe('T43 — Extrato e reconciliação (I-20 e I-21)', () => {
       expect(r2.status).toBe(400);
       expect(r2.body.code).toBe(RequestErrorCode.InvalidPayload);
 
-      const r3 = await apiRequest('GET', `/wallets/${walletId}/ledger?afterVersion=-1`);
+      const r3 = await apiRequest('GET', `/wallets/${walletId}/ledger?limit=notanumber`);
+      expect(r3.status).toBe(400);
+      expect(r3.body.code).toBe(RequestErrorCode.InvalidPayload);
+    });
+
+    test('cursor inválido (base64 quebrado, JSON inválido, v ausente ou não inteiro) devolve 400 INVALID_PAYLOAD', async () => {
+      const walletId = randomUUID();
+
+      // 1. Base64 quebrado / caracteres inválidos
+      const r1 = await apiRequest('GET', `/wallets/${walletId}/ledger?cursor=invalid!@#$%`);
+      expect(r1.status).toBe(400);
+      expect(r1.body.code).toBe(RequestErrorCode.InvalidPayload);
+
+      // 2. Base64 válido de texto não-JSON
+      const notJson = Buffer.from('hello-world').toString('base64url');
+      const r2 = await apiRequest('GET', `/wallets/${walletId}/ledger?cursor=${notJson}`);
+      expect(r2.status).toBe(400);
+      expect(r2.body.code).toBe(RequestErrorCode.InvalidPayload);
+
+      // 3. JSON válido mas sem a propriedade `v`
+      const noV = Buffer.from(JSON.stringify({ other: 123 })).toString('base64url');
+      const r3 = await apiRequest('GET', `/wallets/${walletId}/ledger?cursor=${noV}`);
       expect(r3.status).toBe(400);
       expect(r3.body.code).toBe(RequestErrorCode.InvalidPayload);
 
-      const r4 = await apiRequest('GET', `/wallets/${walletId}/ledger?limit=notanumber`);
+      // 4. `v` presente mas não inteiro (número de ponto flutuante)
+      const floatV = Buffer.from(JSON.stringify({ v: 1.5 })).toString('base64url');
+      const r4 = await apiRequest('GET', `/wallets/${walletId}/ledger?cursor=${floatV}`);
       expect(r4.status).toBe(400);
       expect(r4.body.code).toBe(RequestErrorCode.InvalidPayload);
+
+      // 5. `v` presente mas string
+      const strV = Buffer.from(JSON.stringify({ v: '2' })).toString('base64url');
+      const r5 = await apiRequest('GET', `/wallets/${walletId}/ledger?cursor=${strV}`);
+      expect(r5.status).toBe(400);
+      expect(r5.body.code).toBe(RequestErrorCode.InvalidPayload);
+
+      // 6. `v` negativo
+      const negV = Buffer.from(JSON.stringify({ v: -1 })).toString('base64url');
+      const r6 = await apiRequest('GET', `/wallets/${walletId}/ledger?cursor=${negV}`);
+      expect(r6.status).toBe(400);
+      expect(r6.body.code).toBe(RequestErrorCode.InvalidPayload);
+
+      // 7. JSON que é um array ou primitivo
+      const arr = Buffer.from(JSON.stringify([1, 2, 3])).toString('base64url');
+      const r7 = await apiRequest('GET', `/wallets/${walletId}/ledger?cursor=${arr}`);
+      expect(r7.status).toBe(400);
+      expect(r7.body.code).toBe(RequestErrorCode.InvalidPayload);
     });
 
     test('retorna 404 WALLET_NOT_FOUND para wallet inexistente', async () => {
@@ -219,7 +237,7 @@ describe('T43 — Extrato e reconciliação (I-20 e I-21)', () => {
       });
     });
 
-    test('paginação por cursor estável com inserções concorrentes entre páginas', async () => {
+    test('paginação estável por cursor opaco após inserções subsequentes entre páginas', async () => {
       const playerId = randomUUID();
       const created = await createWallet(playerId, '100.00');
       expect(created.status).toBe(201);
@@ -239,7 +257,7 @@ describe('T43 — Extrato e reconciliação (I-20 e I-21)', () => {
       expect(tx4.status).toBe(200);
 
       // 1. Busca primeira página (versões 1 e 2)
-      const page1 = await apiRequest('GET', `/wallets/${walletId}/ledger?afterVersion=0&limit=2`);
+      const page1 = await apiRequest('GET', `/wallets/${walletId}/ledger?limit=2`);
       expect(page1.status).toBe(200);
       expect(page1.body.items).toHaveLength(2);
       expect(page1.body.items[0].walletVersion).toBe(1);
@@ -254,18 +272,17 @@ describe('T43 — Extrato e reconciliação (I-20 e I-21)', () => {
       expect(page1.body.items[1].money).toEqual({ amount: '10.00', currency: 'BRL' });
       expect(page1.body.items[1].balanceBefore).toEqual({ amount: '100.00', currency: 'BRL' });
       expect(page1.body.items[1].balanceAfter).toEqual({ amount: '90.00', currency: 'BRL' });
-      expect(page1.body.nextCursor).toBe(2);
+      expect(page1.body.nextCursor).toBe(encodeCursor(2));
 
-      // Inserções concorrentes acontecem entre as páginas!
-      const concurrent1 = await submitWager({ walletId, playerId, kind: 'WIN', amount: '50.00' });
-      expect(concurrent1.status).toBe(200); // gera versão 6
+      // Inserções adicionais acontecem entre as páginas
+      const nextTx1 = await submitWager({ walletId, playerId, kind: 'WIN', amount: '50.00' });
+      expect(nextTx1.status).toBe(200); // gera versão 6
 
-      const concurrent2 = await submitWager({ walletId, playerId, kind: 'BET', amount: '30.00' });
-      expect(concurrent2.status).toBe(200); // gera versão 7
+      const nextTx2 = await submitWager({ walletId, playerId, kind: 'BET', amount: '30.00' });
+      expect(nextTx2.status).toBe(200); // gera versão 7
 
-      // 2. Busca segunda página com afterVersion=2
-      // Prova que as inserções concorrentes NÃO afetaram a página 2 (que continua trazendo versões 3 e 4)
-      const page2 = await apiRequest('GET', `/wallets/${walletId}/ledger?afterVersion=2&limit=2`);
+      // 2. Busca segunda página com cursor da página 1
+      const page2 = await apiRequest('GET', `/wallets/${walletId}/ledger?cursor=${page1.body.nextCursor}&limit=2`);
       expect(page2.status).toBe(200);
       expect(page2.body.items).toHaveLength(2);
       expect(page2.body.items[0].walletVersion).toBe(3);
@@ -275,25 +292,25 @@ describe('T43 — Extrato e reconciliação (I-20 e I-21)', () => {
       expect(page2.body.items[1].walletVersion).toBe(4);
       expect(page2.body.items[1].direction).toBe('CREDIT');
       expect(page2.body.items[1].money).toEqual({ amount: '25.00', currency: 'BRL' });
-      expect(page2.body.nextCursor).toBe(4);
+      expect(page2.body.nextCursor).toBe(encodeCursor(4));
 
-      // 3. Busca terceira página usando o alias cursor=4
-      const page3 = await apiRequest('GET', `/wallets/${walletId}/ledger?cursor=4&limit=2`);
+      // 3. Busca terceira página usando o cursor da página 2
+      const page3 = await apiRequest('GET', `/wallets/${walletId}/ledger?cursor=${page2.body.nextCursor}&limit=2`);
       expect(page3.status).toBe(200);
       expect(page3.body.items).toHaveLength(2);
       expect(page3.body.items[0].walletVersion).toBe(5);
       expect(page3.body.items[1].walletVersion).toBe(6);
-      expect(page3.body.nextCursor).toBe(6);
+      expect(page3.body.nextCursor).toBe(encodeCursor(6));
 
       // 4. Busca quarta página (versão 7 restante)
-      const page4 = await apiRequest('GET', `/wallets/${walletId}/ledger?afterVersion=6&limit=2`);
+      const page4 = await apiRequest('GET', `/wallets/${walletId}/ledger?cursor=${page3.body.nextCursor}&limit=2`);
       expect(page4.status).toBe(200);
       expect(page4.body.items).toHaveLength(1);
       expect(page4.body.items[0].walletVersion).toBe(7);
       expect(page4.body.nextCursor).toBeNull(); // menos itens que o limit -> nextCursor é null
 
-      // 5. Busca além do fim
-      const page5 = await apiRequest('GET', `/wallets/${walletId}/ledger?afterVersion=7&limit=2`);
+      // 5. Busca além do fim com cursor da versão 7
+      const page5 = await apiRequest('GET', `/wallets/${walletId}/ledger?cursor=${encodeCursor(7)}&limit=2`);
       expect(page5.status).toBe(200);
       expect(page5.body.items).toHaveLength(0);
       expect(page5.body.nextCursor).toBeNull();
