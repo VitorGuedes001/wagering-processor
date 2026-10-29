@@ -155,3 +155,18 @@ Revisor: Claude (raia C), 28/10/2026, sobre os commits `1be889b`, `6565e91`, `e5
 | N5 | menor | `test/support/queues.ts:143` | `deleted = true` é gravado antes da tentativa. Depois de um `delete()` que lança, uma segunda chamada não tenta de novo e as filas vazam |
 
 Veredito: aprovado com ressalvas
+
+## Dívida registrada na integração
+
+Achados menores da revisão do retrabalho (N1–N5), aceitos pelo humano sem correção agora:
+
+- **N1:** a isenção `guard-ignore-5.1` cobre a classe inteira, e, sem `;`, também as linhas
+  seguintes. Estreitar a isenção para a linha quando a T20–T22 criar os records do ORM.
+- **N2:** a regex de A-03 pode dar falso positivo (`balanceVersion: number`) e não pega
+  `Record<string, number>` nem tipos quebrados em várias linhas.
+- **N3:** a nota cita mais campos de D52 do que o teste exercita. Não é lacuna real, porque o
+  trigger compara a linha inteira.
+- **N4:** os templates `wagering_template_<hash>` de worktrees removidos se acumulam no Postgres.
+  Falta um script de limpeza, e ninguém foi designado para criá-lo.
+- **N5:** `queues.ts` não tenta de novo um `delete()` que falhou. Resolver quando a T32 ou a
+  T40 usarem as filas.

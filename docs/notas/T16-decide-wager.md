@@ -271,3 +271,15 @@ Revisor: Claude (raia C), 28/10/2026, worktree `wp-T16`, branch `t16-decide-wage
 | 5 | menor | `test/unit/decide-wager.test.ts:1255` | O teste de pureza só cobre o caminho `APPLY` de `REFUND`. Não cobre `AWAIT_REFERENCE` nem `REJECT`, e não confere `referenceAttempts`/`updatedAt`. O código é puro por inspeção, então o achado é só de cobertura | |
 
 Veredito: aprovado com ressalvas
+
+## Dívida registrada na integração
+
+Achados menores da revisão cruzada, aceitos pelo humano:
+
+- **1 (corrigido na integração):** a linha 4 de MODELAGEM §5 passou a citar a D61 (commit `3d7b56a`).
+- **2:** o nome do teste `#2 vence #3` diz "com e sem tentativas", mas cobre só o caso esgotado.
+- **3:** o caso com `referenceAttempts > maxAttempts`, prometido na nota, não foi escrito.
+- **4:** `reconcile` lança `CurrencyMismatchError` quando há moedas misturadas, em vez de reportar,
+  e não confere o `walletId` dos lançamentos. O schema impede esse estado (FKs compostas,
+  SCHEMA 2.3), mas o comportamento não está no JSDoc nem tem teste.
+- **5:** o teste de pureza cobre só o caminho `APPLY`.

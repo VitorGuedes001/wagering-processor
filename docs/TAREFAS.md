@@ -20,10 +20,10 @@ a do worktree.
 | T10 Money e payloadHash | 1 | C | T01 | Entregue | t10-money | G | notas/T10-money.md |
 | T11 Wallet e WalletLedgerEntry | 1 | G | T01 | Entregue | t11-wallet | C | notas/T11-wallet.md |
 | T12 WagerTransaction 🔒 | 1 | C | T01 | Entregue | t12-wager-transaction | G | notas/T12-wager-transaction.md |
-| T13 Inbox, Outbox e eventos | 1 | G→C | T01 | Implementada | t13-inbox-outbox | G | — |
+| T13 Inbox, Outbox e eventos | 1 | G→C | T01 | Entregue | t13-inbox-outbox | G | notas/T13-inbox-outbox.md |
 | T14 Migrations e triggers 🔒 | 1 | C | T01 | Entregue | t14-migrations | G | notas/T14-migrations.md |
-| T15 Infra de teste e testes de schema | 1 | G | T01 | Implementada | t15-test-infra | C | — |
-| T16 decideWager e reconcile 🔒 | 1 | G | T10, T11, T12 | Implementada | t16-decide-wager | C | — |
+| T15 Infra de teste e testes de schema | 1 | G | T01 | Entregue | t15-test-infra | C | notas/T15-test-infra.md |
+| T16 decideWager e reconcile 🔒 | 1 | G | T10, T11, T12 | Entregue | t16-decide-wager | C | notas/T16-decide-wager.md |
 | T20 Unit of Work, wallet e ledger 🔒 | 2 | C | T10, T11, T14, T15 | Proposta | t20-unit-of-work | G | — |
 | T21 Repositório de transações | 2 | G | T12, T14, T15 | Proposta | t21-transaction-repo | C | — |
 | T22 Repositórios de inbox e outbox | 2 | G | T13, T14, T15 | Proposta | t22-inbox-outbox-repo | C | — |
