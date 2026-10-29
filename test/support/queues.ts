@@ -3,6 +3,8 @@ import {
   CreateQueueCommand,
   DeleteQueueCommand,
   GetQueueAttributesCommand,
+  ReceiveMessageCommand,
+  SendMessageCommand,
   SQSClient,
 } from '@aws-sdk/client-sqs';
 import { checkInfrastructure, getTestInfraConfig } from './preload';
@@ -174,4 +176,63 @@ export async function createTestQueues(customPrefix?: string): Promise<TestQueue
 
 export async function deleteTestQueues(queues: TestQueues): Promise<void> {
   await queues.delete();
+}
+
+export interface SendEnvelopeOptions {
+  /** `MessageGroupId` do FIFO. Padrão: `walletId` do envelope, como ARQUITETURA 7.2 recomenda ao produtor. */
+  groupId?: string;
+  /**
+   * `MessageDeduplicationId`. Padrão: aleatório, para que o mesmo envelope
+   * enviado de novo chegue de fato ao consumidor (a fila usa
+   * `ContentBasedDeduplication` e engoliria cópias idênticas por 5 min).
+   */
+  deduplicationId?: string;
+}
+
+/** Envia um envelope (objeto ou corpo cru) para a fila de entrada do teste. */
+export async function sendEnvelope(
+  queues: TestQueues,
+  envelope: unknown,
+  options: SendEnvelopeOptions = {},
+): Promise<void> {
+  const body = typeof envelope === 'string' ? envelope : JSON.stringify(envelope);
+  const walletId = (envelope as { data?: { walletId?: unknown } } | null)?.data?.walletId;
+  const groupId = options.groupId ?? (typeof walletId === 'string' ? walletId : randomUUID());
+  await queues.sqs.send(
+    new SendMessageCommand({
+      QueueUrl: queues.inputUrl,
+      MessageBody: body,
+      MessageGroupId: groupId,
+      MessageDeduplicationId: options.deduplicationId ?? randomUUID(),
+    }),
+  );
+}
+
+/** Visíveis + em voo. Zero na fila de entrada = toda mensagem recebeu ack ou foi para a DLQ. */
+export async function queueDepth(queues: TestQueues, queueUrl: string): Promise<number> {
+  const result = await queues.sqs.send(
+    new GetQueueAttributesCommand({
+      QueueUrl: queueUrl,
+      AttributeNames: ['ApproximateNumberOfMessages', 'ApproximateNumberOfMessagesNotVisible'],
+    }),
+  );
+  const visible = Number.parseInt(result.Attributes?.ApproximateNumberOfMessages ?? '0', 10);
+  const inFlight = Number.parseInt(result.Attributes?.ApproximateNumberOfMessagesNotVisible ?? '0', 10);
+  return visible + inFlight;
+}
+
+/**
+ * Lê (sem apagar) os corpos das mensagens visíveis numa fila, com visibilidade
+ * curta para não esconder a mensagem de leituras seguintes. Para inspecionar a DLQ.
+ */
+export async function peekBodies(queues: TestQueues, queueUrl: string): Promise<string[]> {
+  const result = await queues.sqs.send(
+    new ReceiveMessageCommand({
+      QueueUrl: queueUrl,
+      MaxNumberOfMessages: 10,
+      WaitTimeSeconds: 0,
+      VisibilityTimeout: 0,
+    }),
+  );
+  return (result.Messages ?? []).flatMap((m) => (m.Body === undefined ? [] : [m.Body]));
 }
