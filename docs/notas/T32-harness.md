@@ -120,6 +120,6 @@ bun run tarefa:gate
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
-| 1 | importante | `test/concurrency/concurrency.test.ts:77` | A condição de `test.skipIf(!routesAvailable)` foi avaliada em nível de módulo, onde `routesAvailable` é `false` no carregamento (antes de `beforeAll`). Isso atende ao requisito de isolamento antes da integração de T30/T31, mas na integração do marco M5 essa guarda estática deve ser removida para que C-01..C-03 executem plenamente contra as rotas entregues. | |
+| 1 | importante | `test/concurrency/concurrency.test.ts:77` | A condição de `test.skipIf(!routesAvailable)` foi avaliada em nível de módulo, onde `routesAvailable` é `false` no carregamento (antes de `beforeAll`). Isso atende ao requisito de isolamento antes da integração de T30/T31, mas na integração do marco M5 essa guarda estática deve ser removida para que C-01..C-03 executem plenamente contra as rotas entregues. | Resolvido: guarda `test.skipIf(!routesAvailable)` removida após rebase sobre T30/T31. |
 
 Veredito: aprovado

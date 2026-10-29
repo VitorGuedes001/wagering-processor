@@ -53,11 +53,11 @@ export class SubmitWagerTransaction {
       referenceExternalTransactionId: command.referenceExternalTransactionId,
     });
 
-    const now = this.clock.now();
+    const receivedAt = this.clock.now();
     const transactionId = this.idGenerator.next();
 
-    // Valida a forma do comando antes da transação (MODELAGEM 4.2). Lança InvalidWagerRequestError se inválido.
-    const transaction = WagerTransaction.create({
+    // 1. Valida a forma do comando antes da transação (MODELAGEM 4.2, SCHEMA 4.2 passo 1).
+    WagerTransaction.create({
       id: transactionId,
       providerId: command.providerId,
       externalTransactionId: command.externalTransactionId,
@@ -70,7 +70,7 @@ export class SubmitWagerTransaction {
       kind: command.kind,
       money,
       referenceExternalTransactionId: command.referenceExternalTransactionId,
-      at: now,
+      at: receivedAt,
     });
 
     const inboxMessage = inboxContext
@@ -78,13 +78,13 @@ export class SubmitWagerTransaction {
           messageId: inboxContext.messageId,
           consumerName: inboxContext.consumerName,
           payloadHash: hash,
-          at: now,
+          at: receivedAt,
         })
       : undefined;
 
     try {
       return await this.uow.run(async (tx) => {
-        // 1. Inbox check (quando via SQS)
+        // 1. Inbox check (quando via SQS — SCHEMA 4.4)
         if (inboxMessage) {
           const inboxResult = await tx.inbox.tryReceive(inboxMessage);
           if (!inboxResult.accepted) {
@@ -95,7 +95,7 @@ export class SubmitWagerTransaction {
           }
         }
 
-        // 2. Atalho para replays e conflitos antes do lock da wallet (SCHEMA 4.2)
+        // 2. Atalho para replays antes do lock da wallet (SCHEMA 4.2 passo 2: busca apenas idempotency_key)
         const fastTx = await tx.transactions.findByIdempotencyKey(
           command.providerId,
           command.idempotencyKey,
@@ -111,15 +111,7 @@ export class SubmitWagerTransaction {
           return { type: 'IDEMPOTENCY_CONFLICT' };
         }
 
-        const fastExt = await tx.transactions.findByExternalId(
-          command.providerId,
-          command.externalTransactionId,
-        );
-        if (fastExt) {
-          return { type: 'EXTERNAL_ID_CONFLICT' };
-        }
-
-        // 3. SELECT ... FOR UPDATE na wallet (D15)
+        // 3. SELECT ... FOR UPDATE na wallet (D15, SCHEMA 4.2 passo 3)
         const wallet = await tx.wallets.lockById(command.walletId);
         if (!wallet) {
           return { type: 'WALLET_NOT_FOUND' };
@@ -149,7 +141,7 @@ export class SubmitWagerTransaction {
           return { type: 'EXTERNAL_ID_CONFLICT' };
         }
 
-        // 5. Busca referência e verifica se já foi revertida
+        // 5. Busca referência e verifica se já foi revertida (SCHEMA 4.2 passo 5)
         let reference: WagerTransaction | undefined;
         let referenceAlreadyReversed = false;
         if (command.referenceExternalTransactionId !== undefined) {
@@ -161,6 +153,24 @@ export class SubmitWagerTransaction {
             referenceAlreadyReversed = await tx.transactions.hasProcessedReversal(reference.id);
           }
         }
+
+        // Captura o instante sob o lock da wallet para preservar a ordem temporal estrita com wallet_version
+        const now = this.clock.now();
+        const transaction = WagerTransaction.create({
+          id: transactionId,
+          providerId: command.providerId,
+          externalTransactionId: command.externalTransactionId,
+          idempotencyKey: command.idempotencyKey,
+          payloadHash: hash,
+          walletId: command.walletId,
+          playerId: command.playerId,
+          roundId: command.roundId,
+          gameId: command.gameId,
+          kind: command.kind,
+          money,
+          referenceExternalTransactionId: command.referenceExternalTransactionId,
+          at: now,
+        });
 
         // 6. Decisão pura de negócio (MODELAGEM 5)
         const decision = decideWager({
@@ -264,6 +274,13 @@ export class SubmitWagerTransaction {
             tx.transactions.findByExternalId(command.providerId, command.externalTransactionId),
           );
           if (retryExt) {
+            if (retryExt.idempotencyKey === command.idempotencyKey && retryExt.matchesPayload(hash)) {
+              return {
+                type: 'RESULT',
+                view: toTransactionView(retryExt),
+                idempotentReplay: true,
+              };
+            }
             return { type: 'EXTERNAL_ID_CONFLICT' };
           }
         }

@@ -74,7 +74,7 @@ describe('C-01 a C-03: Concorrência Real e Disputa de Lock (TESTES §4.3; CHALL
    * Verificação: exatamente 1 transação, 1 DEBIT, saldo 990.00.
    * 50 respostas com o mesmo transactionId, 49 com idempotentReplay: true.
    */
-  test.skipIf(!routesAvailable)(
+  test(
     'C-01: mesma BET 10.00 enviada 50x em paralelo em 3 instâncias (sem portão e com portão)',
     async () => {
       for (const useGate of [false, true]) {
@@ -157,7 +157,7 @@ describe('C-01 a C-03: Concorrência Real e Disputa de Lock (TESTES §4.3; CHALL
    * Verificação: exatamente 1 PROCESSED, 1 REJECTED INSUFFICIENT_FUNDS, saldo 20.00, 1 DEBIT.
    * Reenviar as duas → replays, nada muda.
    */
-  test.skipIf(!routesAvailable)(
+  test(
     'C-02: duas BETs de 80.00 com saldo 100.00 e portão de lock',
     async () => {
       const playerId = randomUUID();
@@ -219,7 +219,7 @@ describe('C-01 a C-03: Concorrência Real e Disputa de Lock (TESTES §4.3; CHALL
    * C-02b (§13.2): Wallet 1000.00, 100 BETs de 15.00 com portão.
    * Verificação: exatamente 66 PROCESSED e 34 REJECTED, saldo final 10.00.
    */
-  test.skipIf(!routesAvailable)(
+  test(
     'C-02b: 100 BETs de 15.00 com saldo 1000.00 e portão de lock (66 PROCESSED, 34 REJECTED)',
     async () => {
       const playerId = randomUUID();
@@ -275,37 +275,43 @@ describe('C-01 a C-03: Concorrência Real e Disputa de Lock (TESTES §4.3; CHALL
    * C-03 (§13.3): 20 wallets, 20 BETs em cada, em paralelo. Portão em UMA wallet só.
    * Verificação: as outras 19 terminam enquanto a travada espera: o lock não é global (restrição 6).
    */
-  test.skipIf(!routesAvailable)(
+  test(
     'C-03: 20 wallets em paralelo, portão em uma só: prova ausência de lock global',
     async () => {
       // 1. Cria 20 wallets com saldo 500.00 cada
-      const walletIds: string[] = [];
+      const wallets: Array<{ walletId: string; playerId: string }> = [];
       for (let i = 0; i < 20; i++) {
+        const playerId = randomUUID();
         const createRes = await createWallet(cluster, {
-          playerId: randomUUID(),
+          playerId,
           initialBalance: { amount: '500.00', currency: 'BRL' },
         });
         expect(createRes.status).toBe(201);
-        walletIds.push(createRes.body.id);
+        wallets.push({ walletId: createRes.body.id, playerId });
       }
 
-      const lockedWalletId = walletIds[0]!;
-      const otherWalletIds = walletIds.slice(1);
+      const lockedWallet = wallets[0]!;
+      const otherWallets = wallets.slice(1);
 
       // 2. Trava APENAS a primeira wallet
-      const gate = await holdWalletLock(db, lockedWalletId);
+      const gate = await holdWalletLock(db, lockedWallet.walletId);
 
       // Dispara 20 BETs para a wallet travada
       const lockedBets = Array.from({ length: 20 }, () =>
-        aBet({ walletId: lockedWalletId, amount: '10.00' }),
+        aBet({ walletId: lockedWallet.walletId, playerId: lockedWallet.playerId, amount: '10.00' }),
       );
       const lockedPromises = lockedBets.map((b) => postTransaction(cluster, b));
 
       // Dispara 20 BETs para cada uma das outras 19 wallets (total 380 reqs)
       const otherPromises: Promise<any>[] = [];
-      for (const wid of otherWalletIds) {
+      for (const w of otherWallets) {
         for (let j = 0; j < 20; j++) {
-          otherPromises.push(postTransaction(cluster, aBet({ walletId: wid, amount: '10.00' })));
+          otherPromises.push(
+            postTransaction(
+              cluster,
+              aBet({ walletId: w.walletId, playerId: w.playerId, amount: '10.00' }),
+            ),
+          );
         }
       }
 
@@ -331,11 +337,11 @@ describe('C-01 a C-03: Concorrência Real e Disputa de Lock (TESTES §4.3; CHALL
       }
 
       // Verificação de saldo de todas as 20 wallets: 500 - 20 * 10 = 300.00
-      for (const wid of walletIds) {
-        const [w] = await db.sql<Array<{ balance: string }>>`
-          SELECT balance::text FROM wallet WHERE id = ${wid}
+      for (const w of wallets) {
+        const [row] = await db.sql<Array<{ balance: string }>>`
+          SELECT balance::text FROM wallet WHERE id = ${w.walletId}
         `;
-        expect(w?.balance).toBe('300.00');
+        expect(row?.balance).toBe('300.00');
       }
     },
   );
