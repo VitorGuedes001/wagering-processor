@@ -63,6 +63,7 @@ Decisões da T16 (`decideWager` e `reconcile`), aprovadas em 28/10/2026 — `doc
 | # | Decisão | Por quê |
 |---|---|---|
 | D61 | Referência em `PENDING` ou `PENDING_REFERENCE` só devolve `AWAIT_REFERENCE` no passo 4 enquanto `!transaction.referenceAttemptsExhausted(backoff)`; quando as tentativas acabam, cai no passo 5 e é rejeitada com `REFERENCE_NOT_PROCESSED` | Garante que `decideWager` nunca devolve `AWAIT_REFERENCE` após esgotar as 10 tentativas de D11/D57, e reserva `REFERENCE_NOT_FOUND` para referência inexistente (§7.1) |
+| D70 | Eventos emitidos pelo worker de referências levam `correlationId = transaction.id` e `causationId = transaction.idempotencyKey` | A transação não guarda o `correlationId` original, e a seção 8 admite a idempotency key como causa. Fica rastreável sem coluna nova (T42, decisão 5) |
 
 ## 2. Value objects
 
