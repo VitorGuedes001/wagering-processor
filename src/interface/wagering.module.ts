@@ -8,6 +8,7 @@ import {
 import { CreateWallet } from '../application/create-wallet';
 import type { Clock, IdGenerator, UnitOfWork } from '../application/ports';
 import { ApplicationTransactionQueries, ApplicationWalletQueries } from '../application/queries';
+import { RecordProcessingFailure } from '../application/record-processing-failure';
 import { SubmitWagerTransaction } from '../application/submit-wager-transaction';
 import { SystemClock } from '../infrastructure/clock';
 import { RandomUuidGenerator } from '../infrastructure/id-generator';
@@ -20,6 +21,7 @@ import { HttpErrorFilter } from './http/error-mapping';
 import { MetricsController } from './http/metrics.controller';
 import { WageringController } from './http/wagering.controller';
 import { WalletsController } from './http/wallets.controller';
+import { WagerTransactionConsumer } from './sqs/wager-transaction.consumer';
 
 const WAGERING_PROVIDERS: Provider[] = [
   AuthGuard,
@@ -40,6 +42,14 @@ const WAGERING_PROVIDERS: Provider[] = [
       new SubmitWagerTransaction(uow, clock, ids),
   },
   {
+    provide: RecordProcessingFailure,
+    inject: [UNIT_OF_WORK, SystemClock, RandomUuidGenerator],
+    useFactory: (uow: UnitOfWork, clock: Clock, ids: IdGenerator) =>
+      new RecordProcessingFailure(uow, clock, ids),
+  },
+  // Só consome se ENABLE_CONSUMER (D28); depende do SqsInputQueue do MessagingModule.
+  WagerTransactionConsumer,
+  {
     provide: ApplicationWalletQueries,
     inject: [UNIT_OF_WORK],
     useFactory: (uow: UnitOfWork) => new ApplicationWalletQueries(uow),
@@ -52,7 +62,7 @@ const WAGERING_PROVIDERS: Provider[] = [
 ];
 
 /**
- * Controllers e use cases (ARQUITETURA §11). O `UNIT_OF_WORK` vem do
+ * Controllers, use cases e consumidor SQS (ARQUITETURA §11). O `UNIT_OF_WORK` vem do
  * `PersistenceModule`; `withUnitOfWork` liga uma instância pronta (testes).
  */
 @Module({
