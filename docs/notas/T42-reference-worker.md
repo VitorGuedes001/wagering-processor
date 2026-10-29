@@ -1,14 +1,34 @@
 # T42 — Worker de referências
 
-> Estado: Implementada · Raia: C · Revisor: G · Branch: `t42-reference-worker`
+> Estado: Testada · Raia: C · Revisor: G · Branch: `t42-reference-worker`
 
 ## O que muda
 
-Uma frase por arquivo tocado.
+| Arquivo | O quê |
+|---|---|
+| `src/application/resolve-pending-references.ts` | novo use case `ResolvePendingReferences`, com `claim()` por lease e `resolve(id)` em uma transação por item |
+| `src/application/submit-wager-transaction.ts` | extrai `applyWagerDecision` (tabela de MODELAGEM 5) para o worker reusar, e o teto padrão do backoff passa a 5 min |
+| `src/interface/workers/pending-reference.worker.ts` | novo `PendingReferenceWorker`: laço `setTimeout`, desligamento que espera o ciclo, métricas e logs |
+| `src/interface/wagering.module.ts` | registra o use case e o worker, e passa a política de backoff da config ao submit e ao worker |
+| `src/infrastructure/config.ts` | `REFERENCE_BACKOFF_MAX_MS`, `REFERENCE_BATCH`, `REFERENCE_LEASE_MS` e `referenceBackoffFrom` |
+| `docs/ARQUITETURA.md` | §11 registra as variáveis novas |
+| `test/integration/reference-worker.test.ts` | I-18 e I-19 |
+| `test/concurrency/reference-worker.test.ts` | C-07 (`skipIf` até a T40) e C-07b (a) e (b) |
 
 ## Por quê
 
-Regras atendidas, com referência aos docs (ex.: MODELAGEM 4.3; D2).
+| Regra | Onde no código |
+|---|---|
+| CHALLENGE §7.1, D2, D11 | referência fora de ordem fica `PENDING_REFERENCE` e é resolvida em segundo plano, com até `REFERENCE_MAX_ATTEMPTS` tentativas e backoff exponencial até 5 min |
+| D57 | o retry é contado antes de `decideWager`: são exatamente N tentativas (I-19 verifica isso) |
+| SCHEMA 4.5, D18 | claim curto com lease e `SKIP LOCKED`, depois uma transação por item. Se o processo morre, outra instância assume quando o lease vence |
+| SCHEMA 4.3, restrições 6 e 7 | lock só da wallet do item, depois relê a pendente `FOR UPDATE`. Saldo só muda sob esse lock |
+| MODELAGEM 5 | mesmo caminho de aplicação do submit. Retry não emite evento (C-07: "emitidos uma vez") |
+| D1 | duas reversões da mesma `BET` se serializam no lock da wallet, e a segunda vê `alreadyReversed` (C-07b) |
+| D43 | uma política de backoff só, vinda de env, para a submissão e o worker |
+| D28, D32, ARQUITETURA 7.3 | worker ligado por `ENABLE_REFERENCE_WORKER`, com laço simples que drena no shutdown |
+| ARQUITETURA 9, EXECUCAO §6 | métricas do registry da T33, sem valor monetário em label nem em log |
+| Restrições 4 e 8 | eventos vão para o outbox na mesma transação. Nenhum estado de correção fica em memória |
 
 ## Abordagem
 
@@ -181,17 +201,63 @@ Testes:
 
 **Aprovação do humano:** aprovada em 2026-10-29 (na conversa): Abordagem aceita como proposta, com a Lista A (refactor 29e032b já na main, 71dbc44) e todas as decisões pendentes 0 a 7 resolvidas conforme as propostas da nota.
 
+### Desvios da Abordagem aprovada
+
+- `applyWagerDecision(tx, idGenerator, input)` recebe `referenceTransactionId`,
+  `backoff`, `correlationId` e `causationId` no `input`, e não um
+  `eventContext` pronto. Assim a ordem de geração dos ids fica igual à de
+  antes: primeiro o evento, depois o lançamento, depois o `BalanceChanged`. O
+  refactor é puro.
+- Não existe um provider `REFERENCE_BACKOFF` separado. Cada factory do
+  `WageringModule` chama `referenceBackoffFrom(config)`, em `config.ts`. A
+  política continua sendo uma só, porque é derivada do mesmo `APP_CONFIG`.
+- No `WageringModule` e no worker, `APP_CONFIG` é injetado como opcional:
+  `http-endpoints.test.ts` e `observability.test.ts` montam o módulo sem
+  `ConfigModule`. Sem config, o worker fica desligado e o submit usa o default
+  de D11. Não precisei mudar esses testes.
+- `docs/ARQUITETURA.md` §11 registra as três variáveis novas, como previa a
+  decisão 2. O arquivo não estava na tabela de arquivos.
+
 ## Ordem de leitura do diff
 
-1. `arquivo` — o que olhar nele
+1. `src/application/resolve-pending-references.ts`: o fluxo de `resolve`.
+   Olhe a ordem leitura sem lock → `wallets.lockById` → `transactions.lockById`
+   (SCHEMA 4.3), a dupla checagem de `PENDING_REFERENCE` (SCHEMA 4.5) e o
+   `scheduleReferenceRetry` antes de `decideWager` (D57).
+2. `src/application/submit-wager-transaction.ts`: o commit
+   `refactor(t42): extrai applyWagerDecision` deve ser só um movimento de
+   código. No ramo `AWAIT_REFERENCE` com `persist: 'update'`, a função grava e
+   não emite evento (MODELAGEM 5). Os retornos antecipados e a inbox ficaram
+   intocados (coordenação com a T40). `DEFAULT_REFERENCE_BACKOFF.maxMs` passa a
+   300 s (D11).
+3. `src/interface/workers/pending-reference.worker.ts`: o laço com
+   `setTimeout`, o desligamento (para de agendar e espera o ciclo atual), o
+   erro por item que não derruba o ciclo e as métricas de `record`.
+4. `src/interface/wagering.module.ts`: só a lista de providers, com a mesma
+   política de backoff no submit e no use case.
+5. `src/infrastructure/config.ts` e `docs/ARQUITETURA.md`: as três variáveis
+   novas e `referenceBackoffFrom`.
+6. `test/integration/reference-worker.test.ts`: I-18 e I-19. No I-19, veja
+   `reference_attempts = REFERENCE_MAX_ATTEMPTS` (D57) e o único
+   `PendingReference`.
+7. `test/concurrency/reference-worker.test.ts`: o C-07 com `skipIf` pelo
+   arquivo do consumidor, e o C-07b (a)/(b) com portão e `REFERENCE_BATCH=1`.
 
 ## Como verificar
 
 ```bash
 bun run tarefa:gate
+bun test test/integration/reference-worker.test.ts test/concurrency/reference-worker.test.ts --rerun-each 10
 ```
 
+Resultado em 2026-10-29: gate verde em typecheck, skills, unidade,
+arquitetura, integração (130 pass) e concorrência (11 pass, 1 skip = C-07).
+`--rerun-each 10` dos dois arquivos deu 40 pass e 10 skip, sem falha.
+
 ## Decisões pendentes
+
+Nenhuma aberta. As decisões 0 a 7 abaixo foram aprovadas como propostas e
+ficam aqui como registro.
 
 0. **Lista A ou B?** Depende de 29e032b (`fix-estrutura-onda3`) entrar na
    `main`. *Proposta:* integrar o refactor antes e usar a lista A. *Motivo:* a
@@ -259,7 +325,15 @@ Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
 
 ## Fora de escopo / dívida
 
-- (nenhum)
+- `wagering_pending_reference_age_seconds` não é alimentado (decisão 4):
+  precisa de uma consulta nova em `WagerTransactionRepository`.
+- `wagering_lock_conflicts_total` não é alimentado pelo worker (decisão 6).
+- C-07 fica com `skipIf` até `src/interface/sqs/wager-transaction.consumer.ts`
+  (T40) existir. Ele **ainda não rodou**: depois do rebase sobre a T40, rodar
+  `bun run test:concurrency` e conferir o formato do envelope e o
+  `MessageGroupId` com o consumidor real.
+- A T40 entra primeiro e mexe em `submit-wager-transaction.ts`. O rebase da
+  T42 deve conflitar só no ponto da extração, e cabe à T42 resolvê-lo.
 
 ## Revisão cruzada
 
