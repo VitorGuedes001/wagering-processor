@@ -215,15 +215,36 @@ manualmente.
 
 ## 5. Concorrência
 
-_A escrever no B5._ Fonte: [docs/SCHEMA.md](docs/SCHEMA.md) §4.
+Detalhe em [docs/SCHEMA.md](docs/SCHEMA.md) §4. Código em `src/application/use-cases/submit-wager-transaction.ts`, `src/infrastructure/persistence/unit-of-work.ts` e `test/concurrency/`.
+
+- **Lock pessimista por wallet (`SELECT … FOR UPDATE`, D15):** serializa exclusivamente operações que disputam a mesma carteira, sem lock global (restrição 6). Em `READ COMMITTED`, o processo que aguarda o lock relê o estado mais recente da carteira assim que o detentor faz commit.
+- **Timestamp e decisão sob o lock:** a captura do instante da transação, a re-verificação de idempotência/ID externo (passo 4 de SCHEMA §4.2) e a execução de `decideWager` ocorrem após adquirir o `FOR UPDATE`, garantindo que `wallet_version` e `created_at` avancem em ordem monotônica.
+- **Defesa em profundidade:** `UPDATE wallet … WHERE id = $1 AND version = $expectedVersion` e `UNIQUE (wallet_id, wallet_version)` no ledger impedem lost updates mesmo diante de bug na camada de aplicação.
+- **Prova (M5):** cenários `C-01` (50× mesma `BET` paralela em 3 processos reais com e sem portão), `C-02` (disputa de saldo `100.00` por duas `BET` de `80.00`), `C-02b` (100 `BET` de `15.00` disputando `1000.00` → 66 `PROCESSED`, 34 `REJECTED`, saldo `10.00`) e `C-03` (20 wallets em paralelo com portão em uma só, provando ausência de lock global), além de `I-04` (`FaultInjector` abortando com `SIGKILL` em `uow.before-commit` com zero linhas persistidas).
 
 ## 6. Idempotência
 
-_A escrever no B4._ Fonte: [docs/MODELAGEM.md](docs/MODELAGEM.md) §9.
+Detalhe em [docs/MODELAGEM.md](docs/MODELAGEM.md) §9 e [docs/SCHEMA.md](docs/SCHEMA.md) §4.2.
+
+- **Persistida no banco (restrição 2):** garantida por `UNIQUE (provider_id, idempotency_key)` e `UNIQUE (provider_id, external_transaction_id)` em `wager_transaction`, mais `inbox_message` para deduplicação SQS (D7).
+- **Dois níveis de checagem (SCHEMA §4.2):**
+  1. Passo 2 (antes do lock da wallet): busca rápida por `(provider_id, idempotency_key)` para responder replays sem disputar `FOR UPDATE` na carteira.
+  2. Passo 4 (após o lock da wallet): re-verifica `(provider_id, idempotency_key)` e `(provider_id, external_transaction_id)` sob o lock, tratando corridas concorrentes para a mesma carteira.
+  3. Recuperação em `23505` (SCHEMA §5): se duas requisições com a mesma chave mas carteiras distintas colidirem no índice único, o use case captura `UniqueViolationError` e consulta a linha vencedora para devolver replay ou conflito.
+- **Replay determinístico com snapshot (D10):** `balanceAfter` é gravado na transação no momento do desfecho (`PROCESSED` ou `REJECTED`). Replays devolvem sempre o saldo daquele momento, mesmo após movimentações posteriores na carteira (`I-09`).
 
 ## 7. Contrato HTTP e códigos de falha
 
-_A escrever no B4._ Fonte: [docs/ARQUITETURA.md](docs/ARQUITETURA.md) §6, [docs/MODELAGEM.md](docs/MODELAGEM.md) §10.
+Detalhe em [docs/ARQUITETURA.md](docs/ARQUITETURA.md) §6 e [docs/MODELAGEM.md](docs/MODELAGEM.md) §10. Código em `src/interface/http/`.
+
+- **Validação estrita na borda com Zod (D27, restrição 5.1):** `moneySchema` exige `amount` como `string` no formato `^(0|[1-9]\d*)\.\d{2}$`. Qualquer `number` JSON em `amount` é rejeitado imediatamente na borda com `400 INVALID_PAYLOAD` (`I-11`).
+- **Headers e rastreabilidade:** `Idempotency-Key` obrigatório em submissões (`1..256` chars); `CorrelationIdMiddleware` propaga ou gera `X-Correlation-Id` em `AsyncLocalStorage` e no cabeçalho de resposta.
+- **Mapeamento de desfechos (`ARQUITETURA §6.2`):**
+  - `200 OK`: `PROCESSED` (incluindo replay idempotente com `idempotentReplay: true`).
+  - `202 Accepted`: `PENDING_REFERENCE` quando a transação referenciada ainda não chegou (`I-08`).
+  - `422 Unprocessable Entity`: `REJECTED` com `failureCode` (`INSUFFICIENT_FUNDS`, `REVERSAL_INSUFFICIENT_FUNDS`, `CURRENCY_MISMATCH`, `WALLET_PLAYER_MISMATCH`, `REFERENCE_NOT_PROCESSED`, `REFERENCE_KIND_NOT_ALLOWED`, `REFERENCE_CONTEXT_MISMATCH`, `REFERENCE_AMOUNT_MISMATCH`, `REFERENCE_ALREADY_REVERSED`) e snapshot de `balance` (`I-07`).
+  - `409 Conflict`: `WALLET_ALREADY_EXISTS`, `IDEMPOTENCY_CONFLICT`, `EXTERNAL_ID_CONFLICT` (`I-10`).
+  - `503 Service Unavailable` com `Retry-After: 1`: falhas transitórias de infraestrutura (`TransientInfrastructureError`).
 
 ## 8. Mensageria: inbox, outbox, retry e DLQ
 
@@ -235,7 +256,11 @@ _A escrever no B8._ Fonte: [docs/MODELAGEM.md](docs/MODELAGEM.md) D11.
 
 ## 10. Observabilidade
 
-_A escrever no B10._ Fonte: [docs/ARQUITETURA.md](docs/ARQUITETURA.md) §9.
+Detalhe em [docs/ARQUITETURA.md](docs/ARQUITETURA.md) §9. Código em `src/infrastructure/observability/` e `src/interface/http/controllers/metrics.controller.ts`.
+
+- **Logger estruturado JSON com ALS (D29):** `AppLogger` injeta automaticamente `correlationId`, `messageId`, `transactionId`, `walletId`, `providerId`, `kind`, `status` e `failureCode` a partir de `AsyncLocalStorage`, sem usar ALS para transações de banco (D25).
+- **Sanitização financeira (restrição 5.1, `I-23`):** `sanitizeLogData` remove/redige recursivamente chaves monetárias (`amount`, `balance`, `balanceBefore`, `balanceAfter`, `money`) de metadados e mensagens.
+- **Métricas Prometheus (D30, `I-22`):** `MetricsRegistry` (`@prometheus-io/client`) exposto em `GET /metrics` com contadores, gauges e histogramas padronizados (`wagering_transactions_total`, `wagering_duplicates_total`, `wagering_retries_total`, `wagering_dlq_total`, `wagering_lock_conflicts_total`, `wagering_outbox_lag_seconds`, `wagering_processing_duration_seconds`, `wagering_reconciliation_mismatch_total`).
 
 ## 11. Autenticação
 

@@ -27,10 +27,10 @@ a do worktree.
 | T20 Unit of Work, wallet e ledger 🔒 | 2 | C | T10, T11, T14, T15 | Entregue | t20-unit-of-work | G | notas/T20-unit-of-work.md |
 | T21 Repositório de transações | 2 | G | T12, T14, T15 | Entregue | t21-transaction-repo | C | notas/T21-transaction-repo.md |
 | T22 Repositórios de inbox e outbox | 2 | G | T13, T14, T15 | Entregue | t22-inbox-outbox-repo | C | notas/T22-inbox-outbox-repo.md |
-| T30 Use cases de wallet e submissão 🔒 | 3 | C | T16, T20, T21, T22 | Proposta | t30-use-cases | G | — |
-| T31 HTTP | 3 | G | T20, T21, T22 | Proposta | t31-http | C | — |
-| T32 Harness de concorrência 🔒 | 3 | C | T15 | Proposta | t32-harness | G | — |
-| T33 Observabilidade base | 3 | G | T01 | Proposta | t33-observability | C | — |
+| T30 Use cases de wallet e submissão 🔒 | 3 | C | T16, T20, T21, T22 | Entregue | t30-use-cases | G | notas/T30-use-cases.md |
+| T31 HTTP | 3 | G | T20, T21, T22 | Entregue | t31-http | C | notas/T31-http.md |
+| T32 Harness de concorrência 🔒 | 3 | C | T15 | Entregue | t32-harness | G | notas/T32-harness.md |
+| T33 Observabilidade base | 3 | G | T01 | Entregue | t33-observability | C | notas/T33-observability.md |
 | T40 Consumidor SQS 🔒 | 4 | C | T22, T30, T33 | Proposta | t40-sqs-consumer | G | — |
 | T41 Worker de outbox | 4 | G | T22, T33 | Proposta | t41-outbox-worker | C | — |
 | T42 Worker de referências | 4 | C | T30, T33 | Proposta | t42-reference-worker | G | — |
@@ -50,8 +50,8 @@ o limite de 4 agentes ativos e 3 tarefas esperando revisão (EXECUCAO §6).
 | M1 | T10–T13, T16 | `m1-dominio` | fechado em 28/10/2026 |
 | M2 | T14, T15 | `m2-schema` | fechado em 28/10/2026 |
 | M3 | T20–T22 | `m3-persistencia` | fechado em 28/10/2026 |
-| M4 | T30, T31 | `m4-fatia-vertical` | — |
-| M5 | T32 + C-01, C-02, C-02b, C-03 verdes em `test:stress` | `m5-concorrencia` | — |
+| M4 | T30, T31 | `m4-fatia-vertical` | fechado em 29/10/2026 |
+| M5 | T32 + C-01, C-02, C-02b, C-03 verdes em `test:stress` | `m5-concorrencia` | fechado em 29/10/2026 |
 | M6 | T40, T41 | `m6-mensageria` | — |
 | M7 | T42, T43 | `m7-completo` | — |
 | M8 | T50, T51 | `v1.0.0` | — |
