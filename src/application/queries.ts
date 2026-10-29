@@ -1,8 +1,9 @@
-import type { TransactionView, WalletView } from './contracts';
+import type { LedgerEntryView, LedgerPageView, TransactionView, WalletView } from './contracts';
 import type { UnitOfWork } from './ports';
 
 export interface WalletQueriesPort {
   findById(id: string): Promise<WalletView | undefined>;
+  getLedger(walletId: string, afterVersion: number, limit: number): Promise<LedgerPageView | undefined>;
 }
 
 export interface TransactionQueriesPort {
@@ -25,6 +26,33 @@ export class ApplicationWalletQueries implements WalletQueriesPort {
         playerId: wallet.playerId,
         balance: wallet.balance.toJSON(),
         version: wallet.version,
+      };
+    });
+  }
+
+  async getLedger(walletId: string, afterVersion: number, limit: number): Promise<LedgerPageView | undefined> {
+    return this.uow.readSnapshot(async (tx) => {
+      const wallet = await tx.wallets.findById(walletId);
+      if (!wallet) return undefined;
+
+      const entries = await tx.ledger.page(walletId, afterVersion, limit);
+      const items: LedgerEntryView[] = entries.map((entry) => ({
+        id: entry.id,
+        transactionId: entry.transactionId,
+        direction: entry.direction,
+        money: entry.money.toJSON(),
+        balanceBefore: entry.balanceBefore.toJSON(),
+        balanceAfter: entry.balanceAfter.toJSON(),
+        walletVersion: entry.walletVersion,
+        createdAt: entry.createdAt.toISOString(),
+      }));
+
+      const lastItem = items[items.length - 1];
+      const nextCursor = items.length === limit && lastItem ? lastItem.walletVersion : null;
+
+      return {
+        items,
+        nextCursor,
       };
     });
   }
