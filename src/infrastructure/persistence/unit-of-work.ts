@@ -2,6 +2,7 @@ import { IsolationLevel } from '@mikro-orm/core';
 import type { EntityManager, MikroORM } from '@mikro-orm/postgresql';
 import type { TxRepositories, UnitOfWork } from '../../application/ports';
 import type { AppConfig } from '../config';
+import { FaultInjector, FaultPoint } from '../fault-injector';
 import { translateDbError } from './db-errors';
 
 /** Monta cada repositório ligado ao `EntityManager` da transação. Composto no `PersistenceModule`. */
@@ -33,7 +34,9 @@ export class MikroOrmUnitOfWork implements UnitOfWork {
                   set_config('idle_in_transaction_session_timeout', ?, true)`,
           [`${this.config.DB_LOCK_TIMEOUT_MS}ms`, STATEMENT_TIMEOUT, IDLE_IN_TRANSACTION_TIMEOUT],
         );
-        return work(this.repositories(em));
+        const result = await work(this.repositories(em));
+        FaultInjector.hit(FaultPoint.UowBeforeCommit);
+        return result;
       },
       { isolationLevel: IsolationLevel.READ_COMMITTED },
     );
