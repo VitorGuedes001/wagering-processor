@@ -1,6 +1,6 @@
 # T30 — Use cases de wallet e submissão 🔒
 
-> Estado: Testada · Raia: C · Revisor: G · Branch: `t30-use-cases`
+> Estado: Revisada · Raia: C · Revisor: G · Branch: `t30-use-cases`
 
 ## O que muda
 
@@ -74,9 +74,28 @@ bun test ./test/integration/use-cases.test.ts
 
 ## Revisão cruzada
 
-Preenchido pelo agente da outra ferramenta.
+Preenchido pelo agente da outra ferramenta (Revisor T30 / Antigravity).
+
+- **Gate e suíte de testes:** `bun run tarefa:gate` 100% verde (typecheck, skills, unidade, arquitetura A-01..A-03 e integração). Suíte completa de integração executada em PostgreSQL real: `90 pass, 0 fail, 695 expect() calls`. Teste específico `test/integration/use-cases.test.ts` com `14 pass, 0 fail, 101 expect() calls`.
+- **Pontos verificados sem ressalva:**
+  - **Escopo:** `git diff --stat main...t30-use-cases` altera apenas os 4 arquivos previstos na Abordagem (`create-wallet.ts`, `submit-wager-transaction.ts`, `index.ts`, `use-cases.test.ts`) e esta nota.
+  - **Restrição Inviolável 5.1 (Dinheiro):** nenhum uso de `number`, `float`, `parseFloat`, `Number(`, `toFixed` ou `Math.` nos fluxos monetários. A borda valida `MoneyProps`, e o domínio e use cases operam com `Money` (`bigint` em centavos).
+  - **Isolamento de Camadas (ARQUITETURA §2):** `src/application/use-cases` consome apenas tipos/portas de `src/application/ports`, `src/application/contracts` e o domínio puro. Zero acoplamento com MikroORM, AWS SDK, NestJS ou zod.
+  - **Fluxo Transacional (SCHEMA §4.2, §4.4, §5):**
+    - Pré-validações fora de transação: `Money.from` e `WagerTransaction.create` barram payload e combinações inválidas antes do início de qualquer transação de banco.
+    - Passo 1: inbox SQS deduplica por `tryReceive` (`ON CONFLICT DO NOTHING`), diferenciando `DUPLICATE_MESSAGE` de `MESSAGE_PAYLOAD_MISMATCH`.
+    - Passo 2: atalho de replay/conflito antes de concorrer pelo lock da carteira.
+    - Passo 3: aquisição estrita de lock pessimista `SELECT ... FOR UPDATE` via `tx.wallets.lockById`.
+    - Passo 4: re-verificação obrigatória sob lock para evitar race conditions em carteiras coincidentes.
+    - Passo 5 & 6: resolução de referência e reversões anteriores (`hasProcessedReversal`), seguida de avaliação pela função pura `decideWager`.
+    - Passo 7: mutações de saldo e ledger associadas a `update(wallet, expectedVersion)`, garantindo consistência estrita de versão e triggers deferidos. Eventos transacionais gravados exclusivamente no outbox.
+    - Passo 8: marcação de inbox processada na mesma transação.
+  - **Snapshot e Replay Idempotente (MODELAGEM D10):** replay devolve o saldo original da época do evento (`balanceAfter`), mesmo após alterações posteriores na carteira (comprovado em teste).
+  - **Tratamento de 23505 (SCHEMA §5):** recuperação segura em violação de unicidade de idempotência ou id externo por re-consulta sem nova mutação; `wallet_player_currency_uq` mapeado para `WALLET_ALREADY_EXISTS`; demais violações propagadas como erro interno/bug.
+  - **Rigor dos Testes:** testes executados contra PostgreSQL real, validando o estado das tabelas (`wallet`, `wager_transaction`, `wallet_ledger_entry`, `outbox_message`, `inbox_message`) via SQL direto e conferindo invariantes contábeis com `assertAllWalletsConsistent`.
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
+| — | — | — | Nenhum achado. Implementação e testes em total conformidade com as regras e especificações. | — |
 
-Veredito: pendente
+Veredito: aprovado
