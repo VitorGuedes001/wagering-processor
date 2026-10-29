@@ -116,6 +116,27 @@ export class MikroOrmOutboxRepository implements OutboxRepository {
     );
     return record ? OutboxMessageRecord.toDomain(record) : undefined;
   }
+
+  /**
+   * Calcula o lag de outbox em segundos: `now - min(occurred_at) WHERE published_at IS NULL`
+   * (SCHEMA 4.6; ARQUITETURA §9). Devolve 0 se não há eventos pendentes.
+   */
+  async computeLagSeconds(now: Date): Promise<number> {
+    const rows = await this.em.execute<Array<{ min_occurred_at: string | Date | null }>>(
+      `SELECT MIN(occurred_at) AS min_occurred_at
+         FROM outbox_message
+        WHERE published_at IS NULL`,
+    );
+
+    const raw = rows[0]?.min_occurred_at;
+    if (!raw) {
+      return 0;
+    }
+
+    const oldest = raw instanceof Date ? raw : new Date(raw);
+    const lagMs = now.getTime() - oldest.getTime();
+    return lagMs > 0 ? lagMs / 1000 : 0;
+  }
 }
 
 export { MikroOrmOutboxRepository as SqlOutboxRepository };
