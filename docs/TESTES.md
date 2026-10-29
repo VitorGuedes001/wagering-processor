@@ -20,7 +20,7 @@ Duas regras inegociáveis vêm do enunciado:
 | # | Decisão | Por quê |
 |---|---|---|
 | D33 | `bun test` como único runner | Restrição de stack (§4) |
-| D34 | **Um banco por arquivo de teste**, criado por `CREATE DATABASE … TEMPLATE wagering_template`. O template recebe as migrations uma vez por execução | Isolamento total sem `TRUNCATE`, que o trigger do ledger bloqueia (SCHEMA 3). Clonar levou 419 ms medidos no Postgres local, contando o `docker exec` |
+| D34 | **Um banco por arquivo de teste**, criado por `CREATE DATABASE … TEMPLATE wagering_template_<hash>` (D60). O template recebe as migrations uma vez por execução | Isolamento total sem `TRUNCATE`, que o trigger do ledger bloqueia (SCHEMA 3). Clonar levou 419 ms medidos no Postgres local, contando o `docker exec` |
 | D35 | **Filas por arquivo de teste**, com prefixo único (`t<id>-wager-transactions.fifo` etc.), criadas com a mesma redrive policy | Mensagem de um teste nunca chega a outro. Os nomes das filas passam a vir de env |
 | D36 | Testes de concorrência e falha sobem a **aplicação real** em processos separados (`Bun.spawn`) | "≥ 3 processos/instâncias" (§13.4) e "worker morto" (§13.5) exigem processo de verdade |
 | D37 | **Portão de lock** para forçar contenção: o teste trava a wallet numa conexão própria, dispara as requisições, espera todas aparecerem bloqueadas em `pg_stat_activity` e só então solta | Garante que as N transações disputaram o lock de fato. Sem portão, a disputa depende da sorte do agendamento |
@@ -28,6 +28,7 @@ Duas regras inegociáveis vêm do enunciado:
 | D39 | Nada de `sleep` em teste. Espera é `eventually(condição, timeout)` com polling curto | Sleep é lento quando sobra tempo e flaky quando falta |
 | D40 | Invariante `wallet.balance == Σ ledger` (mais a cadeia) checada no `afterEach` de **todo** teste de integração e concorrência, para todas as wallets do banco do arquivo | §13: "invariante final de todos os testes". Com um banco por arquivo, "todas as wallets" é barato |
 | D41 | O suite de concorrência roda também com `--rerun-each 10` (`test:stress`) | Teste de corrida que passa uma vez não prova nada. Dez rodadas pegam o flaky antes do avaliador |
+| D60 | O banco template leva sufixo por worktree: `wagering_template_<hash curto do caminho absoluto do worktree>` | Todos os worktrees compartilham o mesmo PostgreSQL. Com nome por worktree, execuções em paralelo não derrubam nem clonam o template de outra branch (T15) |
 
 ## 2. Níveis
 
@@ -71,16 +72,16 @@ test/
     events.ts          # drena wagering-events, deduplica por eventId
 ```
 
-### 3.1 Banco por arquivo (D34)
+### 3.1 Banco por arquivo (D34, D60)
 
 ```
 preload (uma vez):
-  DROP DATABASE IF EXISTS wagering_template
-  CREATE DATABASE wagering_template
+  DROP DATABASE IF EXISTS wagering_template_<hash>
+  CREATE DATABASE wagering_template_<hash>
   migrations up no template, depois fecha todas as conexões nele
 
 beforeAll (por arquivo):
-  CREATE DATABASE t_<uuid curto> TEMPLATE wagering_template
+  CREATE DATABASE t_<uuid curto> TEMPLATE wagering_template_<hash>
 afterAll:
   DROP DATABASE t_<…> WITH (FORCE)
 ```
