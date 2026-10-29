@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { SendMessageCommand } from '@aws-sdk/client-sqs';
 import { randomUUID } from 'node:crypto';
@@ -18,14 +16,6 @@ import { createWallet, postTransaction } from '../support/http';
 import { assertAllWalletsConsistent } from '../support/invariants';
 import { holdWalletLock } from '../support/lock-gate';
 import { createTestQueues, deleteTestQueues, type TestQueues } from '../support/queues';
-
-/**
- * C-07 envia por SQS e precisa do consumidor da T40. Até ele existir na main,
- * o teste fica pulado (mesmo padrão da T32 com C-01..C-03).
- */
-const CONSUMER_AVAILABLE = existsSync(
-  resolve(import.meta.dir, '../../src/interface/sqs/wager-transaction.consumer.ts'),
-);
 
 describe('C-07 e C-07b: worker de PENDING_REFERENCE em 3 instâncias (TESTES §4.3; CHALLENGE §13.7)', () => {
   let db: TestDatabase;
@@ -106,7 +96,8 @@ describe('C-07 e C-07b: worker de PENDING_REFERENCE em 3 instâncias (TESTES §4
     );
   }
 
-  test.skipIf(!CONSUMER_AVAILABLE)(
+  // Envelope de CHALLENGE §10, consumido pelo WagerTransactionConsumer da T40.
+  test(
     'C-07: ROLLBACK de WIN e REFUND de BET chegam por SQS antes das referências; ambos PROCESSED',
     async () => {
       const { walletId, playerId } = await openWallet('1000.00');
