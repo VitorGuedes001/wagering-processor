@@ -11,7 +11,9 @@ import { ApplicationTransactionQueries, ApplicationWalletQueries } from '../appl
 import { RecordProcessingFailure } from '../application/record-processing-failure';
 import { SubmitWagerTransaction } from '../application/submit-wager-transaction';
 import { SystemClock } from '../infrastructure/clock';
+import { APP_CONFIG, loadConfig } from '../infrastructure/config';
 import { RandomUuidGenerator } from '../infrastructure/id-generator';
+import { SqsInputQueue } from '../infrastructure/messaging/sqs-input-queue';
 import { ObservabilityModule } from '../infrastructure/observability/observability.module';
 import { UNIT_OF_WORK } from '../infrastructure/persistence/persistence.module';
 import { AcceptAllProviderIdentity, PROVIDER_IDENTITY } from '../infrastructure/provider-identity';
@@ -71,10 +73,19 @@ const WAGERING_PROVIDERS: Provider[] = [
   providers: WAGERING_PROVIDERS,
 })
 export class WageringModule implements NestModule {
+  /**
+   * Só HTTP, com uma UoW pronta (testes em processo). Sem fila: o consumidor
+   * recebe `ENABLE_CONSUMER=false` (D28) e nenhum adaptador SQS. A config não lê
+   * `process.env`, então nunca aponta para as filas padrão (TESTES D35).
+   */
   static withUnitOfWork(uow: UnitOfWork): DynamicModule {
     return {
       module: WageringModule,
-      providers: [{ provide: UNIT_OF_WORK, useValue: uow }],
+      providers: [
+        { provide: UNIT_OF_WORK, useValue: uow },
+        { provide: APP_CONFIG, useValue: loadConfig({ ENABLE_CONSUMER: 'false' }) },
+        { provide: SqsInputQueue, useValue: null },
+      ],
     };
   }
 
