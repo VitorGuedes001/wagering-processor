@@ -2,6 +2,8 @@ import { defineConfig } from '@mikro-orm/postgresql';
 import { ReflectMetadataProvider } from '@mikro-orm/decorators/legacy';
 import { Migrator } from '@mikro-orm/migrations';
 import { loadConfig } from '../config';
+import { LedgerEntryRecord } from './records/ledger-entry.record';
+import { WalletRecord } from './records/wallet.record';
 
 const config = loadConfig();
 
@@ -14,9 +16,8 @@ export default defineConfig({
 
   // Descoberta explícita: nada de varrer pastas.
   // Com Bun, o scan de .ts via ts-morph costuma ser a primeira coisa a quebrar.
-  entities: [],
+  entities: [WalletRecord, LedgerEntryRecord],
   metadataProvider: ReflectMetadataProvider,
-  discovery: { warnWhenNoEntities: false },
 
   extensions: [Migrator],
   migrations: {
