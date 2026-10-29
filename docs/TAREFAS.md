@@ -24,9 +24,9 @@ a do worktree.
 | T14 Migrations e triggers 🔒 | 1 | C | T01 | Entregue | t14-migrations | G | notas/T14-migrations.md |
 | T15 Infra de teste e testes de schema | 1 | G | T01 | Entregue | t15-test-infra | C | notas/T15-test-infra.md |
 | T16 decideWager e reconcile 🔒 | 1 | G | T10, T11, T12 | Entregue | t16-decide-wager | C | notas/T16-decide-wager.md |
-| T20 Unit of Work, wallet e ledger 🔒 | 2 | C | T10, T11, T14, T15 | Proposta | t20-unit-of-work | G | — |
-| T21 Repositório de transações | 2 | G | T12, T14, T15 | Proposta | t21-transaction-repo | C | — |
-| T22 Repositórios de inbox e outbox | 2 | G | T13, T14, T15 | Proposta | t22-inbox-outbox-repo | C | — |
+| T20 Unit of Work, wallet e ledger 🔒 | 2 | C | T10, T11, T14, T15 | Entregue | t20-unit-of-work | G | notas/T20-unit-of-work.md |
+| T21 Repositório de transações | 2 | G | T12, T14, T15 | Entregue | t21-transaction-repo | C | notas/T21-transaction-repo.md |
+| T22 Repositórios de inbox e outbox | 2 | G | T13, T14, T15 | Entregue | t22-inbox-outbox-repo | C | notas/T22-inbox-outbox-repo.md |
 | T30 Use cases de wallet e submissão 🔒 | 3 | C | T16, T20, T21, T22 | Proposta | t30-use-cases | G | — |
 | T31 HTTP | 3 | G | T20, T21, T22 | Proposta | t31-http | C | — |
 | T32 Harness de concorrência 🔒 | 3 | C | T15 | Proposta | t32-harness | G | — |
@@ -49,7 +49,7 @@ o limite de 4 agentes ativos e 3 tarefas esperando revisão (EXECUCAO §6).
 | M0 | T01 | `m0-contratos` | fechado em 28/10/2026 |
 | M1 | T10–T13, T16 | `m1-dominio` | fechado em 28/10/2026 |
 | M2 | T14, T15 | `m2-schema` | fechado em 28/10/2026 |
-| M3 | T20–T22 | `m3-persistencia` | — |
+| M3 | T20–T22 | `m3-persistencia` | fechado em 28/10/2026 |
 | M4 | T30, T31 | `m4-fatia-vertical` | — |
 | M5 | T32 + C-01, C-02, C-02b, C-03 verdes em `test:stress` | `m5-concorrencia` | — |
 | M6 | T40, T41 | `m6-mensageria` | — |

@@ -27,6 +27,7 @@ custo sem retorno.
 | D48 | O lease das portas é `leaseMs: number`. O tipo `Duration` citado na seção 3 não existe | Sem tipo novo para uma duração em milissegundos (T01) |
 | D49 | Tipos de entrada e saída dos use cases (`WagerCommand`, `TransactionView`, `SubmitOutcome` etc.) ficam em `src/application/contracts.ts`, separados das portas em `ports.ts` | O HTTP (T31) programa contra eles antes do use case (T30) existir (T01) |
 | D50 | `RequestErrorCode` (MODELAGEM 10.2) fica em `application/contracts.ts`. `FailureCode` fica em `domain` | Erro de requisição nasce no use case. `FailureCode` é gravado na transação (T01) |
+| D62 | `OutboxRepository.claimDue` usa a transação recebida. O worker de outbox chama o claim sozinho num `uow.run` curto, publica fora de transação e faz `markPublished` ou `scheduleRetry` de cada mensagem no seu próprio `uow.run` | A porta fica na Unit of Work como as outras (D25). A "transação curta própria" de D18 vira responsabilidade do worker, e a publicação nunca acontece com transação aberta (restrição 4). Decidida na revisão da T22 |
 
 ## 2. Camadas
 

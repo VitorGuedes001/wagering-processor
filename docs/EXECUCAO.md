@@ -315,7 +315,7 @@ imutabilidade no M2 e a reconciliação no M7.
 | Tarefa | Raia | Conteúdo | Aceite | Est. |
 |---|---|---|---|---|
 | T40 🔒 | C | consumidor SQS, inbox, classificação de erros, DLQ, `SIGTERM` básico | I-12 a I-15 | 3 h |
-| T41 | G | worker de outbox, publisher, lag | I-16, C-06, C-06b | 2,5 h |
+| T41 | G | worker de outbox, publisher, lag. Claim, publicação e marcação em três passos separados (D62) | I-16, C-06, C-06b | 2,5 h |
 | T42 | C | worker de `PENDING_REFERENCE` | I-18, I-19, C-07, C-07b | 2 h |
 | T43 | G | extrato com cursor, endpoint de reconciliação | I-21 | 1 h |
 

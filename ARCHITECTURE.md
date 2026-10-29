@@ -83,7 +83,69 @@ ainda não integradas, e isso foi removido na revisão.
 
 ## 3. ORM, mapeamento e estratégia transacional
 
-_A escrever no B3._ Fonte: [docs/SCHEMA.md](docs/SCHEMA.md) §7, [docs/ARQUITETURA.md](docs/ARQUITETURA.md) D25.
+Detalhe em [docs/SCHEMA.md](docs/SCHEMA.md) §5 e §7. Código em `src/infrastructure/persistence/`.
+
+### Records separados do domínio
+
+Cada tabela tem um *record* do MikroORM (`records/*.record.ts`), e cada repositório
+converte `record ↔ domínio` à mão, com `rehydrate` na ida e `toJSON().amount` na
+volta. O domínio não conhece o ORM (A-01), e o record não tem regra nenhuma.
+
+- **Dinheiro é `string` no record**, com coluna `numeric(19,2)`. Do banco para o
+  domínio passa só por `Money.fromPersistence`; nenhum `number` existe no caminho.
+- **Sem relações declaradas:** as FKs compostas vivem no schema. Declarar
+  `@ManyToOne` traria proxies e reordenaria escritas.
+- **Sem `@Property({ version: true })`:** a `version` da wallet é conferida no
+  próprio `UPDATE … WHERE version = $esperada`. Zero linhas é bug, não corrida, porque
+  quem chega ali já tem o lock (`StaleWalletVersionError`).
+
+### Repositórios executam na hora
+
+Nenhum `persist`/`flush`, nenhum identity map: `insert`, `nativeUpdate` e leituras
+com `disableIdentityMap`. A ordem das escritas é a do use case (a FK do ledger exige
+a transação antes do lançamento), e o erro aparece na chamada que o causou.
+
+### Unit of Work explícita (D25)
+
+```ts
+await uow.run(async (tx) => {
+  const wallet = await tx.wallets.lockById(id);   // SELECT … FOR UPDATE (D15)
+  ...
+});
+```
+
+- **`run`:** `READ COMMITTED` e, como primeira query, `lock_timeout` (2 s),
+  `statement_timeout` (5 s) e `idle_in_transaction_session_timeout` (10 s) locais à
+  transação (D21). Um teste com uma conexão só prova que eles não vazam para a
+  transação seguinte.
+- **`readSnapshot`:** `REPEATABLE READ READ ONLY` para a reconciliação (D22), sem
+  `lock_timeout` porque não trava nada.
+- **Repositórios por fábrica:** `RepositoryFactories` monta os cinco repositórios com
+  o `EntityManager` da transação. Nenhum repositório é provider do Nest: injetado,
+  receberia o `EntityManager` global e escreveria fora da transação, sem erro.
+- **Outbox (D62):** o worker faz o claim num `uow.run` curto, publica fora de
+  transação e marca cada mensagem no seu próprio `uow.run`.
+
+### Tradução de erro na borda
+
+A UoW traduz o erro do driver uma vez, num `try/catch` que envolve o `work` **e o
+COMMIT**. Os triggers *deferred* (D53) só falham no COMMIT, e um tradutor dentro do
+repositório nunca os veria.
+
+| Erro | Vira |
+|---|---|
+| `23505` de constraint conhecida | `UniqueViolationError(constraint)`, que o use case usa para refazer o fluxo ou responder `WALLET_ALREADY_EXISTS` |
+| `55P03`, `40P01`, `57014`, `57P01`–`57P03`, `25P03`, classe `08`, socket, conexão perdida | `TransientInfrastructureError`: 503 no HTTP, retry na fila |
+| `23514`, `23503`, `23000` de trigger, o resto | passa sem tradução: é bug, e o estado errado não foi gravado |
+
+### Prova
+
+I-03 para as cinco entidades, contra Postgres real: ida e volta com dinheiro como
+string, `FOR UPDATE` travando uma segunda conexão, `SKIP LOCKED` e lease nos claims,
+corrida da inbox (SCHEMA 4.3), conexão derrubada antes do COMMIT, saldo sem
+lançamento recusado no COMMIT e snapshot recusando escrita. As mutações que a revisão
+cruzada fez sobreviver (tirar o filtro de status, `SET SESSION` no lugar de `SET
+LOCAL`, tradução só no `work`) passaram a quebrar testes.
 
 ## 4. Schema e garantias no banco
 
@@ -203,4 +265,12 @@ Orçamento de 36 h ([docs/PLANO.md](docs/PLANO.md) §2):
   Compose;
 - ≥ 3 instâncias é provado pelos cenários de concorrência com três processos,
   não por um cenário misto dedicado;
-- sem teste de carga.
+- sem teste de carga;
+- **conexão presa no pool quando a sessão do Postgres morre no meio da transação.**
+  O Kysely 0.29.6, usado pelo MikroORM 7, só devolve a conexão ao pool depois de um
+  COMMIT ou ROLLBACK bem-sucedido; com o socket morto, os dois falham. O chamador
+  recebe `TransientInfrastructureError` corretamente, mas a vaga no pool se perde.
+  Acontece só com a sessão morta (restart ou failover do Postgres,
+  `pg_terminate_backend`, `idle_in_transaction_session_timeout`), não com lock,
+  timeout de statement ou trigger. Algumas quedas seguidas esgotam o pool, e a
+  instância precisa reiniciar. Aceito na T20, sem patch da dependência.
