@@ -179,9 +179,31 @@ Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
 
 ## Revisão cruzada
 
-Preenchido pelo agente da outra ferramenta.
+Preenchido por Antigravity em 2026-10-29.
+
+### Verificações realizadas
+
+1. **Escopo:** Alterações restritas a `test/concurrency/failure-scenarios.test.ts`, `test/support/queues.ts` e esta nota. Nenhum arquivo de `src/`, contratos de `ports.ts` ou infraestrutura compartilhada foram tocados.
+2. **C-05 (CHALLENGE §13.5, TESTES §4.3):**
+   - Testa a instância A abortando deterministicamente via `FAULT_POINT=consumer.after-commit-before-ack`.
+   - Verifica o estado intermediário antes da redelivery: commit concluído (1 transação `PROCESSED`, 1 lançamento `DEBIT`, 1 linha na inbox com `processed = true`), mensagem mantida em voo na fila (`queueDepth = 1`).
+   - Após subida da instância B com consumidor habilitado e expiração do `visibilityTimeoutSeconds` (3 s), a mensagem é redelivered, dedupada pela inbox e acked, sem débito duplicado e com saldo exato de `990.00`. DLQ permanece vazia e invariantes contábeis D40 são satisfeitas.
+3. **C-08 (CHALLENGE §13.8, TESTES §4.3):**
+   - Cluster de 3 instâncias com 10 wallets, submetendo 300 mensagens SQS (BET, WIN, LOSS com `MessageGroupId = walletId`) e 60 requisições HTTP em paralelo.
+   - Aplica `SIGKILL` em 2 das 3 instâncias no meio da carga (ao registrar 1/3 das mensagens SQS) e sobe 2 novas instâncias.
+   - Requisições HTTP com conexão interrompida pelo kill são reenviadas com a mesma `Idempotency-Key` e tratadas com replay ou efeito único.
+   - Valida drenagem completa da fila de entrada, outbox e referências pendentes; DLQ vazia; zero transações em estado `FAILED`; exatamente 1 transação terminal (`PROCESSED` ou `REJECTED`) para cada uma das 360 mensagens submetidas.
+   - Endpoint `POST /wallets/:id/reconciliation` executado em uma das novas instâncias valida `consistent: true` para todas as 10 wallets, além do cheque contábil D40 via SQL direto.
+4. **Restrições Invioláveis e Concorrência:**
+   - Dinheiro tratado estritamente como string decimal (`'1000.00'`, `'10.00'`, `'1.00'`, `'0.00'`); sem uso de `number`, `parseFloat` ou `Math.` em caminhos monetários.
+   - Encerramento de processos realizado estritamente por PID via `AppProcess.kill` / `Bun.spawn`, sem comandos globais proibidos de SO (`taskkill /IM`, `pkill bun`) ou manipulação indevida de containers.
+   - Testes utilizam PostgreSQL e LocalStack SQS reais em bancos e filas com prefixos isolados por arquivo de teste.
+5. **Gate e Suíte de Concorrência:**
+   - `bun run tarefa:gate` 100% verde (typecheck, skills, unidade, arquitetura, integração e concorrência).
+   - Teste `test/concurrency/failure-scenarios.test.ts` executou com sucesso (2 pass, 0 fail, 763 asserções).
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
+| — | — | — | Nenhum achado. Implementação e testes em estrita conformidade com os documentos e restrições. | — |
 
-Veredito: pendente
+Veredito: aprovado
