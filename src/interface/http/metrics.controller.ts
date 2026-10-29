@@ -1,5 +1,5 @@
 import { Controller, Get, Header } from '@nestjs/common';
-import { MetricsRegistry } from '../../../infrastructure/observability/metrics';
+import { MetricsRegistry } from '../../infrastructure/observability/metrics';
 
 @Controller('metrics')
 export class MetricsController {

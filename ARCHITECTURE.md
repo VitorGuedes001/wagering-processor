@@ -215,7 +215,7 @@ manualmente.
 
 ## 5. Concorrência
 
-Detalhe em [docs/SCHEMA.md](docs/SCHEMA.md) §4. Código em `src/application/use-cases/submit-wager-transaction.ts`, `src/infrastructure/persistence/unit-of-work.ts` e `test/concurrency/`.
+Detalhe em [docs/SCHEMA.md](docs/SCHEMA.md) §4. Código em `src/application/submit-wager-transaction.ts`, `src/infrastructure/persistence/unit-of-work.ts` e `test/concurrency/`.
 
 - **Lock pessimista por wallet (`SELECT … FOR UPDATE`, D15):** serializa exclusivamente operações que disputam a mesma carteira, sem lock global (restrição 6). Em `READ COMMITTED`, o processo que aguarda o lock relê o estado mais recente da carteira assim que o detentor faz commit.
 - **Timestamp e decisão sob o lock:** a captura do instante da transação, a re-verificação de idempotência/ID externo (passo 4 de SCHEMA §4.2) e a execução de `decideWager` ocorrem após adquirir o `FOR UPDATE`, garantindo que `wallet_version` e `created_at` avancem em ordem monotônica.
@@ -256,7 +256,7 @@ _A escrever no B8._ Fonte: [docs/MODELAGEM.md](docs/MODELAGEM.md) D11.
 
 ## 10. Observabilidade
 
-Detalhe em [docs/ARQUITETURA.md](docs/ARQUITETURA.md) §9. Código em `src/infrastructure/observability/` e `src/interface/http/controllers/metrics.controller.ts`.
+Detalhe em [docs/ARQUITETURA.md](docs/ARQUITETURA.md) §9. Código em `src/infrastructure/observability/` e `src/interface/http/metrics.controller.ts`.
 
 - **Logger estruturado JSON com ALS (D29):** `AppLogger` injeta automaticamente `correlationId`, `messageId`, `transactionId`, `walletId`, `providerId`, `kind`, `status` e `failureCode` a partir de `AsyncLocalStorage`, sem usar ALS para transações de banco (D25).
 - **Sanitização financeira (restrição 5.1, `I-23`):** `sanitizeLogData` remove/redige recursivamente chaves monetárias (`amount`, `balance`, `balanceBefore`, `balanceAfter`, `money`) de metadados e mensagens.
@@ -264,7 +264,18 @@ Detalhe em [docs/ARQUITETURA.md](docs/ARQUITETURA.md) §9. Código em `src/infra
 
 ## 11. Autenticação
 
-_A escrever no B12._ Fonte: [docs/ARQUITETURA.md](docs/ARQUITETURA.md) §10.
+Detalhe em [docs/ARQUITETURA.md](docs/ARQUITETURA.md) §10 (D31). Código em `src/interface/http/auth.guard.ts` e `src/infrastructure/provider-identity.ts`.
+
+- **Decisão: não implementada.** Autenticação não vale pontos (CHALLENGE §2 e §14), e o tempo foi para correção financeira, concorrência e idempotência. Ficam no código os dois pontos de extensão que o §2 pede.
+- **`AuthGuard` no-op:** aplicado em `/wallets` e `/wagering`. Anexa ao request um `CallerIdentity { providerId: undefined }` e deixa passar. `/health/*` e `/metrics` não usam o guard e ficam abertos.
+- **`ProviderIdentityPort`:** o `WageringController` chama `assertMaySubmit(caller, payload.providerId)` depois de validar o payload e antes do use case. A implementação atual, `AcceptAllProviderIdentity`, aceita tudo.
+- **Desenho que seria adotado:**
+  1. Keycloak no Docker Compose, com um client por provedor no fluxo *client credentials* (OIDC, máquina a máquina).
+  2. O `AuthGuard` valida o JWT pelo JWKS do realm (assinatura, `exp`, `iss`, `aud`) e responde 401 quando o token falta ou é inválido. O `azp` do token vira `CallerIdentity.providerId`.
+  3. O `ProviderIdentityPort` real lança quando `caller.providerId` diverge do `providerId` do payload, e a borda responde 403. Assim um provedor não submete em nome de outro.
+  4. A troca é de implementação: o guard e o provider do token `PROVIDER_IDENTITY` no `WageringModule`. Controllers, use cases e domínio não mudam.
+- **Fila:** mensagens do SQS são canal interno confiável (§2) e não passam pelo guard. O `providerId` delas segue as mesmas validações de domínio do HTTP, porque o consumidor chama o mesmo use case.
+- **Fora de escopo:** tabela própria de usuários, hash de senha e autorização por papel.
 
 ## 12. Testes
 

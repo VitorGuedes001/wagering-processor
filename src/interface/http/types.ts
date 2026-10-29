@@ -1,6 +1,10 @@
+import type { CallerIdentity } from '../../application/ports';
+
 export interface HttpRequest {
   headers: Record<string, string | string[] | undefined>;
   correlationId?: string;
+  /** Preenchido pelo `AuthGuard`. */
+  caller?: CallerIdentity;
 }
 
 export interface HttpResponse {

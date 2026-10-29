@@ -1,36 +1,5 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { Injectable, Optional, type LoggerService } from '@nestjs/common';
-
-export interface LogContext {
-  correlationId?: string;
-  messageId?: string;
-  transactionId?: string;
-  walletId?: string;
-  providerId?: string;
-  kind?: string;
-  status?: string;
-  failureCode?: string;
-  [key: string]: unknown;
-}
-
-export const logContextStorage = new AsyncLocalStorage<LogContext>();
-
-export function runWithLogContext<T>(context: LogContext, fn: () => T): T {
-  const parent = logContextStorage.getStore();
-  const merged: LogContext = { ...parent, ...context };
-  return logContextStorage.run(merged, fn);
-}
-
-export function getLogContext(): LogContext | undefined {
-  return logContextStorage.getStore();
-}
-
-export function updateLogContext(fields: Partial<LogContext>): void {
-  const store = logContextStorage.getStore();
-  if (store) {
-    Object.assign(store, fields);
-  }
-}
+import { getRequestContext } from './request-context';
 
 const FORBIDDEN_KEY_PATTERN = /^(amount|balance|balancebefore|balanceafter|money)$/i;
 
@@ -130,7 +99,7 @@ export class AppLogger implements LoggerService {
   }
 
   private writeEntry(level: string, rawMessage: unknown, optionalParams: unknown[]): void {
-    const alsContext = getLogContext() ?? {};
+    const alsContext = getRequestContext() ?? {};
     let messageText = '';
     let nestContext: string | undefined;
     const extraMeta: Record<string, unknown> = {};

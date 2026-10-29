@@ -12,27 +12,22 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { RequestErrorCode } from '../../application/contracts';
-import { type WalletQueriesPort } from '../../application/queries';
+import { CreateWallet } from '../../application/create-wallet';
+import { ApplicationWalletQueries, type WalletQueriesPort } from '../../application/queries';
+import { getCorrelationId } from '../../infrastructure/observability/request-context';
 import { AuthGuard } from './auth.guard';
-import { getCorrelationId } from './correlation-id.middleware';
 import { HttpErrorFilter, mapCreateWalletOutcomeToResponse } from './error-mapping';
 import { createWalletSchema } from './schemas';
 import type { HttpRequest, HttpResponse } from './types';
-import {
-  CREATE_WALLET_USE_CASE,
-  type CreateWalletUseCase,
-} from './use-case-handlers';
-
-export const WALLET_QUERIES = Symbol('WALLET_QUERIES');
 
 @Controller('wallets')
 @UseGuards(AuthGuard)
 @UseFilters(HttpErrorFilter)
 export class WalletsController {
   constructor(
-    @Inject(CREATE_WALLET_USE_CASE)
-    private readonly createWalletUseCase: CreateWalletUseCase,
-    @Inject(WALLET_QUERIES)
+    @Inject(CreateWallet)
+    private readonly createWalletUseCase: Pick<CreateWallet, 'execute'>,
+    @Inject(ApplicationWalletQueries)
     private readonly walletQueries: WalletQueriesPort,
   ) {}
 

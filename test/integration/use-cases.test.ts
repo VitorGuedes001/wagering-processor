@@ -4,8 +4,8 @@ import { defineConfig, type EntityManager, MikroORM } from '@mikro-orm/postgresq
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock, IdGenerator } from '../../src/application/ports';
 import type { WagerCommand } from '../../src/application/contracts';
-import { CreateWallet } from '../../src/application/use-cases/create-wallet';
-import { SubmitWagerTransaction } from '../../src/application/use-cases/submit-wager-transaction';
+import { CreateWallet } from '../../src/application/create-wallet';
+import { SubmitWagerTransaction } from '../../src/application/submit-wager-transaction';
 import { FailureCode } from '../../src/domain/failure-code';
 import {
   type SubmittableKind,

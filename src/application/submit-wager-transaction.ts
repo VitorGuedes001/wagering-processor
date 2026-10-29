@@ -1,20 +1,20 @@
-import type { Clock, IdGenerator, UnitOfWork } from '../ports';
-import { UniqueViolationError } from '../ports';
-import type { InboxContext, SubmitOutcome, TransactionView, WagerCommand } from '../contracts';
-import { Money } from '../../domain/money';
-import { payloadHash } from '../../domain/payload-hash';
+import type { Clock, IdGenerator, UnitOfWork } from './ports';
+import { UniqueViolationError } from './ports';
+import type { InboxContext, SubmitOutcome, TransactionView, WagerCommand } from './contracts';
+import { Money } from '../domain/money';
+import { payloadHash } from '../domain/payload-hash';
 import {
   type BackoffPolicy,
   WagerTransaction,
-} from '../../domain/wager-transaction';
-import { decideWager } from '../../domain/decide-wager';
-import { InboxMessage } from '../../domain/inbox-message';
-import { OutboxMessage } from '../../domain/outbox-message';
-import { LedgerDirection } from '../../domain/wallet-ledger-entry';
-import { WagerTransactionProcessed } from '../../domain/events/wager-transaction-processed';
-import { WagerTransactionRejected } from '../../domain/events/wager-transaction-rejected';
-import { WagerTransactionPendingReference } from '../../domain/events/wager-transaction-pending-reference';
-import { WalletBalanceChanged } from '../../domain/events/wallet-balance-changed';
+} from '../domain/wager-transaction';
+import { decideWager } from '../domain/decide-wager';
+import { InboxMessage } from '../domain/inbox-message';
+import { OutboxMessage } from '../domain/outbox-message';
+import { LedgerDirection } from '../domain/wallet-ledger-entry';
+import { WagerTransactionProcessed } from '../domain/events/wager-transaction-processed';
+import { WagerTransactionRejected } from '../domain/events/wager-transaction-rejected';
+import { WagerTransactionPendingReference } from '../domain/events/wager-transaction-pending-reference';
+import { WalletBalanceChanged } from '../domain/events/wallet-balance-changed';
 
 export const DEFAULT_REFERENCE_BACKOFF: BackoffPolicy = {
   baseMs: 1_000,

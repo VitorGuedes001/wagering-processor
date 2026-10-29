@@ -25,9 +25,11 @@ import { MikroOrmWalletRepository } from '../../src/infrastructure/persistence/w
 import { AuthGuard } from '../../src/interface/http/auth.guard';
 import { CorrelationIdMiddleware } from '../../src/interface/http/correlation-id.middleware';
 import { HttpErrorFilter } from '../../src/interface/http/error-mapping';
-import { HttpModule } from '../../src/interface/http/http.module';
-import { SUBMIT_WAGER_USE_CASE } from '../../src/interface/http/use-case-handlers';
-import { WageringController, TRANSACTION_QUERIES } from '../../src/interface/http/wagering.controller';
+import { WageringController } from '../../src/interface/http/wagering.controller';
+import { WageringModule } from '../../src/interface/wagering.module';
+import { AcceptAllProviderIdentity, PROVIDER_IDENTITY } from '../../src/infrastructure/provider-identity';
+import { ApplicationTransactionQueries } from '../../src/application/queries';
+import { SubmitWagerTransaction } from '../../src/application/submit-wager-transaction';
 import { createTestDatabase, type TestDatabase } from '../support/database';
 import { assertAllWalletsConsistent } from '../support/invariants';
 import { getTestInfraConfig } from '../support/preload';
@@ -74,7 +76,7 @@ describe('HTTP Endpoints Integration (I-05 a I-11)', () => {
     uow = new MikroOrmUnitOfWork(orm, { DB_LOCK_TIMEOUT_MS: 2000 }, factories);
 
     @Module({
-      imports: [HttpModule.forRoot(uow)],
+      imports: [WageringModule.withUnitOfWork(uow)],
     })
     class TestAppModule {}
 
@@ -920,15 +922,16 @@ describe('HTTP Endpoints Integration (I-05 a I-11)', () => {
           HttpErrorFilter,
           CorrelationIdMiddleware,
           {
-            provide: SUBMIT_WAGER_USE_CASE,
+            provide: SubmitWagerTransaction,
             useValue: {
               execute: async () => {
                 throw new TransientInfrastructureError('Lock timeout simulado');
               },
             },
           },
+          { provide: PROVIDER_IDENTITY, useClass: AcceptAllProviderIdentity },
           {
-            provide: TRANSACTION_QUERIES,
+            provide: ApplicationTransactionQueries,
             useValue: {
               findById: async () => undefined,
               findByExternalId: async () => undefined,
