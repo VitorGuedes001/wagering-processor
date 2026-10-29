@@ -34,10 +34,13 @@ export class WagerTransactionProcessed extends IntegrationEvent<WagerTransaction
   }
 
   static from(transaction: WagerTransaction, ctx: EventContext): WagerTransactionProcessed {
-    // Campos de provedor só podem faltar no `OPENING` (D42), como nos eventos irmãos.
+    // Campos de provedor só podem faltar no `OPENING` (D42; SCHEMA 2.2, `wager_tx_provider_fields_ck`).
     const missingProviderFields =
       transaction.kind !== WagerTransactionKind.Opening &&
-      (transaction.providerId === undefined || transaction.externalTransactionId === undefined);
+      (transaction.providerId === undefined ||
+        transaction.externalTransactionId === undefined ||
+        transaction.roundId === undefined ||
+        transaction.gameId === undefined);
     if (
       transaction.status !== WagerTransactionStatus.Processed ||
       transaction.balanceAfter === undefined ||

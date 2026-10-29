@@ -221,6 +221,12 @@ describe('IntegrationEvent & Subclasses (U-03, U-04)', () => {
     expect(() =>
       WagerTransactionProcessed.from(makeTransaction({ externalTransactionId: undefined }), baseCtx),
     ).toThrow(InvalidTransactionStateError);
+    expect(() =>
+      WagerTransactionProcessed.from(makeTransaction({ roundId: undefined }), baseCtx),
+    ).toThrow(InvalidTransactionStateError);
+    expect(() =>
+      WagerTransactionProcessed.from(makeTransaction({ gameId: undefined }), baseCtx),
+    ).toThrow(InvalidTransactionStateError);
   });
 
   it('WagerTransactionProcessed.from throws when PROCESSED lacks balanceAfter or processedAt', () => {
