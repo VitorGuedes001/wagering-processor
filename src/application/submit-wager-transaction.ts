@@ -19,7 +19,7 @@ import { WalletBalanceChanged } from '../domain/events/wallet-balance-changed';
 
 export const DEFAULT_REFERENCE_BACKOFF: BackoffPolicy = {
   baseMs: 1_000,
-  maxMs: 60_000,
+  maxMs: 300_000, // D11: teto de 5 min
   maxAttempts: 10,
 };
 

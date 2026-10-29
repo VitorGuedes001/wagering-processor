@@ -391,7 +391,8 @@ contexto) e `HealthModule`. O domínio não é módulo: é código puro importad
 | `ENABLE_HTTP`, `ENABLE_CONSUMER`, `ENABLE_OUTBOX_WORKER`, `ENABLE_REFERENCE_WORKER` | `true` | isolar componentes em teste (D28) |
 | `SQS_CONSUMER_CONCURRENCY` | 5 | |
 | `OUTBOX_POLL_MS` / `OUTBOX_BATCH` / `OUTBOX_LEASE_MS` | 500 / 50 / 30000 | |
-| `REFERENCE_POLL_MS` / `REFERENCE_MAX_ATTEMPTS` / `REFERENCE_BACKOFF_BASE_MS` | 1000 / 10 / 1000 | D11 |
+| `REFERENCE_POLL_MS` / `REFERENCE_MAX_ATTEMPTS` / `REFERENCE_BACKOFF_BASE_MS` / `REFERENCE_BACKOFF_MAX_MS` | 1000 / 10 / 1000 / 300000 | D11. Uma política só para a submissão e o worker (D43) |
+| `REFERENCE_BATCH` / `REFERENCE_LEASE_MS` | 50 / 30000 | claim do worker de referências, como o do outbox (SCHEMA 4.5, D18) |
 | `SQS_INPUT_QUEUE` / `SQS_DLQ` / `SQS_EVENTS_QUEUE` | `wager-transactions.fifo` / `wager-transactions-dlq.fifo` / `wagering-events.fifo` | filas isoladas por teste ([TESTES.md](TESTES.md), D35) |
 | `DB_LOCK_TIMEOUT_MS` | 2000 | D21. Os testes com portão de lock sobem esse valor |
 | `FAULT_POINT` | — | só em teste ([TESTES.md](TESTES.md), D38) |
