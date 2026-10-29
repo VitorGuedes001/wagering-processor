@@ -1,0 +1,101 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpStatus,
+  Inject,
+  Param,
+  Post,
+  Req,
+  Res,
+  UseFilters,
+  UseGuards,
+} from '@nestjs/common';
+import { RequestErrorCode } from '../../application/contracts';
+import { type TransactionQueriesPort } from '../../application/queries';
+import type { SubmittableKind } from '../../domain/wager-transaction';
+import { AuthGuard } from './auth.guard';
+import { getCorrelationId } from './correlation-id.middleware';
+import { HttpErrorFilter, mapSubmitOutcomeToResponse } from './error-mapping';
+import { idempotencyKeyHeaderSchema, wagerTransactionSchema } from './schemas';
+import type { HttpRequest, HttpResponse } from './types';
+import {
+  SUBMIT_WAGER_USE_CASE,
+  type SubmitWagerUseCase,
+} from './use-case-handlers';
+
+export const TRANSACTION_QUERIES = Symbol('TRANSACTION_QUERIES');
+
+@Controller()
+@UseGuards(AuthGuard)
+@UseFilters(HttpErrorFilter)
+export class WageringController {
+  constructor(
+    @Inject(SUBMIT_WAGER_USE_CASE)
+    private readonly submitWagerUseCase: SubmitWagerUseCase,
+    @Inject(TRANSACTION_QUERIES)
+    private readonly transactionQueries: TransactionQueriesPort,
+  ) {}
+
+  /**
+   * Submete uma aposta financeira (CHALLENGE §9, ARQUITETURA §6).
+   * Aceita tanto `/wagering/transactions` quanto `/wagers/v1`.
+   */
+  @Post(['wagering/transactions', 'wagers/v1'])
+  async submitWager(
+    @Body() rawBody: unknown,
+    @Headers('idempotency-key') rawIdempotencyKey: unknown,
+    @Req() req: HttpRequest,
+    @Res() res: HttpResponse,
+  ) {
+    const idempotencyKey = idempotencyKeyHeaderSchema.parse(rawIdempotencyKey);
+    const validated = wagerTransactionSchema.parse(rawBody);
+
+    const correlationId = req.correlationId || getCorrelationId() || '';
+
+    const outcome = await this.submitWagerUseCase.execute({
+      providerId: validated.providerId,
+      externalTransactionId: validated.externalTransactionId,
+      idempotencyKey,
+      playerId: validated.playerId,
+      walletId: validated.walletId,
+      roundId: validated.roundId,
+      gameId: validated.gameId,
+      kind: validated.kind as SubmittableKind,
+      money: validated.money,
+      referenceExternalTransactionId: validated.referenceExternalTransactionId,
+      correlationId,
+    });
+
+    return mapSubmitOutcomeToResponse(outcome, res);
+  }
+
+  @Get('wagering/transactions/:transactionId')
+  async getTransactionById(@Param('transactionId') transactionId: string, @Res() res: HttpResponse) {
+    const tx = await this.transactionQueries.findById(transactionId);
+    if (!tx) {
+      return res.status(HttpStatus.NOT_FOUND).json({
+        code: RequestErrorCode.TransactionNotFound,
+        message: 'Transaction not found',
+      });
+    }
+    return res.status(HttpStatus.OK).json(tx);
+  }
+
+  @Get('providers/:providerId/wagering/transactions/:externalTransactionId')
+  async getTransactionByExternalId(
+    @Param('providerId') providerId: string,
+    @Param('externalTransactionId') externalTransactionId: string,
+    @Res() res: HttpResponse,
+  ) {
+    const tx = await this.transactionQueries.findByExternalId(providerId, externalTransactionId);
+    if (!tx) {
+      return res.status(HttpStatus.NOT_FOUND).json({
+        code: RequestErrorCode.TransactionNotFound,
+        message: 'Transaction not found',
+      });
+    }
+    return res.status(HttpStatus.OK).json(tx);
+  }
+}
