@@ -236,7 +236,38 @@ Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
 
 Preenchido pelo agente da outra ferramenta.
 
+Revisor: Claude (raia C), 28/10/2026, worktree `wp-T16`, branch `t16-decide-wager` em `5e8fc56`.
+
+**Gate:** `bun run tarefa:gate` verde: typecheck ✔, skills ✔, unidade ✔ (316 pass, 0 fail; 112 em `decide-wager.test.ts`, 9 em `reconcile.test.ts`), arquitetura ✔ (1 pass).
+
+**O que conferi:**
+
+- **Ordem (MODELAGEM §5):** `decide-wager.ts:50-130` segue a tabela linha a linha, com retorno antecipado em cada passo. Mutação de ordem numa **cópia temporária** fora do worktree (`scratchpad/t16swap`), rodando `decide-wager.test.ts` a cada troca:
+  - #1↔#2: 2 testes falham (`#1 vence #2` e "todas as regras");
+  - #6↔#7: 5 testes falham (`#6 vence #7` e as 4 linhas de referência `OPENING`, que não tem `roundId`);
+  - #8↔#9: 1 falha (`#8 vence #9`);
+  - #9↔#10 (reversão checada depois do saldo): 1 falha (`#9 vence #10`).
+  - Por raciocínio: #4↔#5 é pego pelas 8 linhas "tentativas restantes → AWAIT_REFERENCE" do bloco 4, que passariam a devolver `REFERENCE_NOT_PROCESSED`. #2↔#3 é pego por `#2 vence #3`, no caso esgotado. #3 e #4 não falham juntos, porque `reference` ausente e presente se excluem.
+- **D57:** `decideWager` só lê `referenceAttemptsExhausted(backoff)` (`:65`) e nunca chama `scheduleReferenceRetry`. O JSDoc (`:36-45`) documenta que o worker incrementa antes. Os dois testes de ciclo checam `referenceAttempts === attempt` depois de cada retry, então um incremento dentro de `decideWager` quebraria a contagem.
+- **D61:** `:75-86`: `PENDING`/`PENDING_REFERENCE` esgotada cai no passo 5 e devolve `REFERENCE_NOT_PROCESSED`, e nunca `AWAIT_REFERENCE`. Está coberto para os 4 kinds × 2 status e no ciclo de 10 tentativas.
+- **D2/D56:** `hasReference` (`:61-62`) filtra os passos 3–9. Sem referência, `WIN`/`LOSS` nunca chegam a `AWAIT_REFERENCE` (há testes `APPLY` para os dois). Com referência, passam por 3–7. Os passos 8–9 ficam dentro de `requiresReference()` (`:103`), e há testes de `WIN`/`LOSS` com valor diferente e com `referenceAlreadyReversed = true` devolvendo `APPLY`.
+- **Saldo (§7.9):** o passo 10 só roda quando `direction === DEBIT`, o que só acontece para `BET` e para `ROLLBACK` de `WIN`/`REFUND`. `REFUND` e `ROLLBACK` de `BET` são `CREDIT` e têm teste com wallet zerada. O ternário `:125-128` separa `INSUFFICIENT_FUNDS` de `REVERSAL_INSUFFICIENT_FUNDS`.
+- **D55:** `ledgerDirectionFor` só é chamado depois de `affectsBalance()` (exclui `LOSS`) e dos passos 3–6. Assim, todo `ROLLBACK` chega com referência `PROCESSED` de kind reversível.
+- **Exceções de `Money`:** `money.equals` (`:105`) só roda depois do passo 7, que garante a mesma moeda. `canDebit` só roda depois do passo 2. Nenhum caminho válido lança `CurrencyMismatchError`.
+- **Pureza:** sem I/O, sem `Date`, sem `now`, e nenhum método mutador é chamado. Os imports são só de `src/domain`.
+- **reconcile (MODELAGEM §11):** a cadeia parte de `Money.zero` e não exige `walletVersion = 1`, e o primeiro lançamento em `walletVersion = 2` tem teste. `calculated = Σ CREDIT − Σ DEBIT`. `difference = stored − calculated` usa `subtract` e tem teste negativo (`-30.00`). `consistent = chainIntact && equals`. Os casos de §12 (consistente, divergente e cadeia quebrada no início, no meio e por `!isBalanced`) estão cobertos.
+- **Mistura de moedas em `reconcile`:** **lança** `CurrencyMismatchError` em vez de reportar (`Money.equals`/`add`/`subtract` em `reconcile.ts:34,40-41`). Ver achado 4.
+- **Restrição 5.1:** não há `number`, `parseFloat`, `Number(`, `toFixed` nem `Math.` em caminho de dinheiro. `referenceAttempts` é contador, não dinheiro.
+- **Contratos M0:** `git diff main...t16-decide-wager -- src/domain` não muda assinatura pública. `DecideWagerInput`, `WagerDecision`, `ReconciliationResult` e as duas funções estão idênticos. `failure-code.ts` só mudou o JSDoc de `ReferenceNotProcessed`. `MODELAGEM.md` só ganhou a tabela D61 e a linha de §10.1.
+- **Escopo:** os 7 arquivos do diff são exatamente os "Arquivos que vou tocar".
+- **Testes:** não há test double, `mock`, `spyOn`, `Reflect.construct` nem `Object.create`. Os testes usam só `Money.from`/`fromPersistence`, `Wallet.open`, `WagerTransaction.create`/`rehydrate` e `WalletLedgerEntry.rehydrate`.
+
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
+| 1 | menor | `docs/MODELAGEM.md:228` | A linha 4 da tabela de §5 ainda diz só `AWAIT_REFERENCE`, sem citar D61. Quem lê §5 isolado (por exemplo, a T42) não vê que, com as tentativas esgotadas, a resposta é `REFERENCE_NOT_PROCESSED` no passo 5. Sugestão: acrescentar "(enquanto não esgotou, D61)" na célula. Fica a critério do humano, porque o escopo aprovado só citava D61 e §10.1 | |
+| 2 | menor | `test/unit/decide-wager.test.ts:871` | O teste `#2 vence #3` diz "com e sem tentativas", mas só exercita o caso esgotado (`REFERENCE_NOT_FOUND`). Falta o caso com tentativas restantes, em que `CURRENCY_MISMATCH` vence `AWAIT_REFERENCE`. A ordem já é provada pelo caso que existe, então é só o nome que promete mais do que o teste faz | |
+| 3 | menor | `test/unit/decide-wager.test.ts:383` | A matriz da nota (§4.1, linha #3) promete `referenceAttempts = maxAttempts` **e `> maxAttempts`**, mas só `= maxAttempts` foi testado. O `>=` de `referenceAttemptsExhausted` não tem caso acima do limite nesta suíte | |
+| 4 | menor | `src/domain/reconcile.ts:34` | Com um lançamento em moeda diferente da wallet, `reconcile` **lança** `CurrencyMismatchError` (vindo de `Money.equals`/`add`/`subtract`) em vez de reportar `chainIntact = false`. O schema impede esse estado (`ledger_wallet_fk` em `(wallet_id, currency)`, SCHEMA 2.3), então só acontece por bug de quem chama, e o 500 é coerente com MODELAGEM 10.4. Mas o JSDoc não diz isso e não há teste fixando o comportamento. O mesmo vale para `entry.walletId ≠ wallet.id`, que não é conferido. Sugestão: uma linha no JSDoc e um teste com `toThrow` | |
+| 5 | menor | `test/unit/decide-wager.test.ts:1255` | O teste de pureza só cobre o caminho `APPLY` de `REFUND`. Não cobre `AWAIT_REFERENCE` nem `REJECT`, e não confere `referenceAttempts`/`updatedAt`. O código é puro por inspeção, então o achado é só de cobertura | |
 
-Veredito: pendente
+Veredito: aprovado com ressalvas
