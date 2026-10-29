@@ -156,7 +156,7 @@ Testes (`test/integration/sqs-consumer.test.ts`, app real com
 | Processar o lote todo em paralelo, sem olhar o grupo | descarta de graça a ordem por `MessageGroupId`, que ARQUITETURA 7.2 recomenda usar como otimização |
 | Retry dentro do processo (laço de tentativas em memória) | estado de correção em memória (restrição 8); o backoff fica na visibilidade da mensagem |
 
-**Aprovação do humano:** pendente
+**Aprovação do humano:** aprovada em 2026-10-29 (na conversa): Abordagem aceita como proposta, com a lista de arquivos da variante com o refactor 29e032b (já na main, 71dbc44) e todas as decisões pendentes DP-1 a DP-5 resolvidas conforme as propostas da nota.
 
 ## Ordem de leitura do diff
 
