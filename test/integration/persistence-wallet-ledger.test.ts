@@ -11,7 +11,7 @@ import { TransientInfrastructureError, type TxRepositories, UniqueViolationError
 import { Money } from '../../src/domain/money';
 import { Wallet } from '../../src/domain/wallet';
 import { LedgerDirection } from '../../src/domain/wallet-ledger-entry';
-import { StaleWalletVersionError } from '../../src/infrastructure/persistence/db-errors';
+import { StaleWalletVersionError, translateDbError } from '../../src/infrastructure/persistence/db-errors';
 import { MikroOrmLedgerRepository } from '../../src/infrastructure/persistence/ledger-repository';
 import { LedgerEntryRecord } from '../../src/infrastructure/persistence/records/ledger-entry.record';
 import { WalletRecord } from '../../src/infrastructure/persistence/records/wallet.record';
@@ -52,8 +52,47 @@ const factories: RepositoryFactories = {
   outbox: outOfScope<TxRepositories['outbox']>('outbox'),
 };
 
-function uow(lockTimeoutMs = 2000): MikroOrmUnitOfWork {
-  return new MikroOrmUnitOfWork(orm, { DB_LOCK_TIMEOUT_MS: lockTimeoutMs }, factories);
+function uow(lockTimeoutMs = 2000, on: MikroORM = orm): MikroOrmUnitOfWork {
+  return new MikroOrmUnitOfWork(on, { DB_LOCK_TIMEOUT_MS: lockTimeoutMs }, factories);
+}
+
+/** `poolMax: 1` força toda transação a reusar a mesma conexão: é como se vê um `SET` vazando. */
+function initOrm(poolMax?: number): Promise<MikroORM> {
+  const cfg = getTestInfraConfig();
+  return MikroORM.init(
+    defineConfig({
+      host: cfg.dbHost,
+      port: cfg.dbPort,
+      user: cfg.dbUser,
+      password: cfg.dbPassword,
+      dbName: db.name,
+      entities: [WalletRecord, LedgerEntryRecord],
+      metadataProvider: ReflectMetadataProvider,
+      debug: false,
+      forceUtcTimezone: true,
+      ...(poolMax ? { pool: { min: 1, max: poolMax } } : {}),
+    }),
+  );
+}
+
+/**
+ * ORM descartável para os testes que derrubam a conexão. O Kysely 0.29.6 só devolve a
+ * conexão ao pool depois de um COMMIT ou ROLLBACK bem-sucedido: com o socket morto,
+ * ela fica presa e o `close()` espera para sempre. Por isso o `close` não é aguardado
+ * (ver "Fora de escopo / dívida" na nota).
+ */
+async function withDisposableOrm(fn: (on: MikroORM) => Promise<void>): Promise<void> {
+  const disposable = await initOrm();
+  try {
+    await fn(disposable);
+  } finally {
+    void disposable.close(true);
+  }
+}
+
+async function backendPid(): Promise<number> {
+  const [row] = await currentEm!.execute<{ pid: number }[]>('select pg_backend_pid() as pid');
+  return row!.pid;
 }
 
 /** A linha de `wager_transaction` que a FK do ledger exige. O repositório de transações é da T21. */
@@ -118,20 +157,7 @@ async function caught(fn: () => Promise<unknown>): Promise<unknown> {
 
 beforeAll(async () => {
   db = await createTestDatabase();
-  const cfg = getTestInfraConfig();
-  orm = await MikroORM.init(
-    defineConfig({
-      host: cfg.dbHost,
-      port: cfg.dbPort,
-      user: cfg.dbUser,
-      password: cfg.dbPassword,
-      dbName: db.name,
-      entities: [WalletRecord, LedgerEntryRecord],
-      metadataProvider: ReflectMetadataProvider,
-      debug: false,
-      forceUtcTimezone: true,
-    }),
-  );
+  orm = await initOrm();
   other = await db.connect();
 });
 
@@ -284,6 +310,24 @@ describe('Unit of Work', () => {
     expect(settings[0]).toEqual({ lock: '1234ms', statement: '5s', idle: '10s', isolation: 'read committed' });
   });
 
+  test('os timeouts não vazam para a conexão depois do commit', async () => {
+    const single = await initOrm(1);
+    try {
+      const firstPid = await uow(1234, single).run(() => backendPid());
+      const after = await uow(2000, single).readSnapshot(async () => {
+        expect(await backendPid()).toBe(firstPid); // mesma conexão nas duas transações
+        return currentEm!.execute(
+          `select current_setting('lock_timeout') as lock, current_setting('statement_timeout') as statement,
+                  current_setting('idle_in_transaction_session_timeout') as idle`,
+        );
+      });
+      // readSnapshot aplica statement e idle (D21), mas não lock: '0' prova que o 1234ms do run não ficou
+      expect(after[0]).toEqual({ lock: '0', statement: '5s', idle: '10s' });
+    } finally {
+      await single.close(true);
+    }
+  });
+
   test('wallet duplicada vira UniqueViolationError com a constraint (SCHEMA 5)', async () => {
     const wallet = await openWallet('0.00');
     const twin = Wallet.open({
@@ -321,13 +365,17 @@ describe('Unit of Work', () => {
   test('saldo alterado sem lançamento falha no COMMIT, sem tradução (D53)', async () => {
     const opened = await openWallet('10.00');
 
+    let updatedInsideWork = false;
     const error = await caught(() =>
       uow().run(async (tx) => {
         const wallet = (await tx.wallets.lockById(opened.id))!;
         wallet.credit(brl('5.00'), randomUUID(), randomUUID(), at); // lançamento descartado de propósito
         await tx.wallets.update(wallet, 1);
+        updatedInsideWork = true;
       }),
     );
+
+    expect(updatedInsideWork).toBe(true); // o UPDATE passou: quem recusou foi o COMMIT
 
     expect(error).not.toBeInstanceOf(UniqueViolationError);
     expect(error).not.toBeInstanceOf(TransientInfrastructureError);
@@ -337,6 +385,41 @@ describe('Unit of Work', () => {
     const wallet = (await uow().run((tx) => tx.wallets.findById(opened.id)))!;
     expect(wallet.balance.toJSON().amount).toBe('10.00');
     await assertAllWalletsConsistent(db);
+  });
+
+  test('conexão derrubada no meio da transação vira TransientInfrastructureError', async () => {
+    const opened = await openWallet('10.00');
+
+    await withDisposableOrm(async (disposable) => {
+      const error = await caught(() =>
+        uow(2000, disposable).run(async (tx) => {
+          const pid = await backendPid();
+          await other`select pg_terminate_backend(${pid})`;
+          await tx.wallets.lockById(opened.id);
+        }),
+      );
+
+      expect(error).toBeInstanceOf(TransientInfrastructureError);
+    });
+  });
+
+  test('conexão derrubada antes do COMMIT vira TransientInfrastructureError (a tradução cobre o COMMIT)', async () => {
+    const opened = await openWallet('10.00');
+    let workFinished = false;
+
+    await withDisposableOrm(async (disposable) => {
+      const error = await caught(() =>
+        uow(2000, disposable).run(async (tx) => {
+          await tx.wallets.lockById(opened.id);
+          const pid = await backendPid();
+          await other`select pg_terminate_backend(${pid})`;
+          workFinished = true;
+        }),
+      );
+
+      expect(workFinished).toBe(true); // nenhuma query do work falhou: o erro veio do COMMIT
+      expect(error).toBeInstanceOf(TransientInfrastructureError);
+    });
   });
 
   test('erro dentro do work desfaz tudo', async () => {
@@ -364,9 +447,12 @@ describe('Unit of Work', () => {
 
     const isolation = await uow().readSnapshot(async (tx) => {
       await tx.wallets.findById(opened.id);
-      return currentEm!.execute(`select current_setting('transaction_isolation') as isolation`);
+      return currentEm!.execute(
+        `select current_setting('transaction_isolation') as isolation,
+                current_setting('transaction_read_only') as read_only`,
+      );
     });
-    expect(isolation[0]).toEqual({ isolation: 'repeatable read' });
+    expect(isolation[0]).toEqual({ isolation: 'repeatable read', read_only: 'on' });
 
     const fresh = Wallet.open({
       id: randomUUID(),
@@ -378,5 +464,41 @@ describe('Unit of Work', () => {
     }).wallet;
     const error = await caught(() => uow().readSnapshot((tx) => tx.wallets.insert(fresh)));
     expect((error as { code?: string }).code).toBe('25006');
+  });
+});
+
+describe('translateDbError (SCHEMA 5)', () => {
+  const pgError = (fields: { code?: string; constraint?: string; message?: string }) =>
+    Object.assign(new Error(fields.message ?? 'erro do driver'), fields);
+
+  test.each(['55P03', '40P01', '57014', '57P01', '57P02', '57P03', '25P03', '08006', '08001'])(
+    'SQLSTATE %s é transitório',
+    (code) => {
+      expect(translateDbError(pgError({ code }))).toBeInstanceOf(TransientInfrastructureError);
+    },
+  );
+
+  test.each(['ECONNREFUSED', 'ECONNRESET', 'ECONNABORTED', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND'])(
+    'falha de socket %s é transitória',
+    (code) => {
+      expect(translateDbError(pgError({ code }))).toBeInstanceOf(TransientInfrastructureError);
+    },
+  );
+
+  test.each(['Connection terminated unexpectedly', 'Client has encountered a connection error and is not queryable'])(
+    'conexão perdida sem code ("%s") é transitória',
+    (message) => {
+      expect(translateDbError(pgError({ message }))).toBeInstanceOf(TransientInfrastructureError);
+    },
+  );
+
+  test.each(['23514', '23503', '23000', '25006'])('SQLSTATE %s passa sem tradução (bug)', (code) => {
+    const original = pgError({ code });
+    expect(translateDbError(original)).toBe(original);
+  });
+
+  test('23505 de constraint fora da lista passa sem tradução', () => {
+    const original = pgError({ code: '23505', constraint: 'outra_uq' });
+    expect(translateDbError(original)).toBe(original);
   });
 });
