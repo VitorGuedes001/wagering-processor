@@ -58,7 +58,7 @@ Atende às decisões arquiteturais D18 (workers com lease `FOR UPDATE SKIP LOCKE
 4. `src/main.ts` — Remoção da inicialização manual do worker e suporte a boot headless sem HTTP via `ENABLE_HTTP=false`.
 5. `test/support/app-process.ts` — Detecção de sinal `ready` para boot sem porta HTTP.
 6. `src/infrastructure/messaging/sqs-event-publisher.ts` e `messaging.module.ts` — Publicador SQS e exportação do provider.
-7. `src/infrastructure/persistence/outbox-repository.ts` — Consulta SQL de `computeLagSeconds` no repositório.
+7. `src/infrastructure/persistence/outbox-repository.ts` e `outbox-lag-probe.ts` — Consulta SQL de `computeLagSeconds` e o probe que o worker chama para o lag (D74).
 8. `test/integration/outbox-worker.test.ts` — Testes de integração I-16 e leitura de `wagering_retries_total`.
 9. `test/concurrency/outbox-worker.test.ts` — Testes C-06 e C-06b sem HTTP e com contagem de entregas totais e duplicatas.
 
@@ -76,7 +76,8 @@ bun test test/concurrency/outbox-worker.test.ts
   - *Contexto:* A porta `OutboxRepository` em `src/application/ports.ts` (congelada no marco M0) não declara método de consulta para cálculo de lag (`computeLagSeconds`), embora SCHEMA §4.6 e ARQUITETURA §9 especifiquem a métrica `wagering_outbox_lag_seconds`.
   - *Motivo:* Na versão anterior, o worker acessava `computeLagSeconds` por meio de downcast (`as unknown as`), o que viola a porta e o encapsulamento estrito.
   - *Proposta:* Formalizar a extensão da porta `OutboxRepository` com `computeLag(now: Date): Promise<number>` (ou criar query dedicada em `src/application/queries.ts`).
-  - *Estado:* Como `ports.ts` está congelado pós-M0 (AGENTS.md regra 4) e não pode ser alterado na tarefa sem aprovação prévia, o worker não realiza downcast e retorna 0 no método `computeLag`, eliminando qualquer cast fora da porta.
+  - *Decisão do humano (2026-10-29):* lag via provider de infraestrutura `OutboxLagProbe`, sem estender a porta, como o revisor propôs. Registrada como D74 (ARQUITETURA §1) e implementada pelo integrador em `ce19956`.
+  - *Estado anterior:* Como `ports.ts` está congelado pós-M0 (AGENTS.md regra 4) e não pode ser alterado na tarefa sem aprovação prévia, o worker não realiza downcast e retorna 0 no método `computeLag`, eliminando qualquer cast fora da porta.
 
 ## Pedidos ao integrador
 
@@ -152,3 +153,5 @@ Revisor: Claude Code, 29/10/2026, sobre `aa0e9ea` (commits `2855fcd`, `01524b0`,
 O revisor também verificou, sem achados: nenhum `number`, `parseFloat` ou `Math.` em caminho de dinheiro (o `Math.min` de `test/concurrency/outbox-worker.test.ts:38` é só tamanho de lote). Nenhuma publicação com transação aberta. `markPublished` e `scheduleRetry` rodam cada um no seu `uow.run`. O SQS usa `MessageDeduplicationId = eventId` e `MessageGroupId = aggregateId` (D20). As labels das métricas batem com o `MetricsRegistry`. `stop()` é idempotente, mesmo chamado duas vezes (before/on shutdown).
 
 Veredito (segunda rodada): mudanças necessárias. Os achados 1 a 6 e 8 a 10 estão resolvidos. O que falta é o achado 11 (lag fixo em 0), que precisa ser corrigido ou ter DP-1 decidida pelo humano antes do merge. Também é preciso rebase sobre a `main` atual.
+
+**Correção do integrador (2026-10-29), a pedido do humano:** rebase sobre a `main` com a T43 (`6117810`), o achado 11 corrigido com o `OutboxLagProbe` e os achados 12 a 14 resolvidos (`ce19956`). Os achados 1 a 14 ficam resolvidos.
