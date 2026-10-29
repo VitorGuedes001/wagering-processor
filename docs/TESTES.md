@@ -32,6 +32,9 @@ Duas regras inegociáveis vêm do enunciado:
 | D66 | No I-15, a falha transitória é simulada com o portão de lock (D37) e `DB_LOCK_TIMEOUT_MS` curto, e não com `docker pause` | O Postgres é compartilhado pelos worktrees, e o AGENTS proíbe pausar containers. O `lock_timeout` vira erro transitório e prova o mesmo retry com sucesso (T40, DP-5) |
 | D71 | O C-07b roda em duas variantes: (a) por HTTP, com a BET já existente, e (b) pelo worker, com as duas reversões em `PENDING_REFERENCE` | A linha do C-07b não diz se as reversões estão pendentes. Só a variante (b) exercita o worker de referências (T42, decisão 7) |
 | D72 | O teste de extrato da T43 fica como teste complementar de regressão, sem o ID I-20 e sem alegar concorrência | EXECUCAO §6 dá à T43 só o I-21, e o PLANO §2.2 (B9) tira o I-20 dela (T43, decisão 1) |
+| D75 | Nos cenários de crash (C-05, C-08), a fila de entrada de teste usa `VisibilityTimeout` de 3 s via `createTestQueues(prefix, { visibilityTimeoutSeconds })`. O padrão continua 30 s, como o `init-queues.sh`, e a redrive policy não muda | Prova a mesma redelivery depois que a visibilidade expira. Com 30 s, o `test:stress` (10×) ficaria inviável (T50, DP-1) |
+| D76 | No C-05, a instância B só liga o consumidor depois que A morre no ponto de falha | Com as duas consumindo juntas, o resultado depende de quem recebe a mensagem. Se B recebe primeiro, A nunca morre e o teste não prova nada (T50, DP-2) |
+| D77 | A carga contínua do C-08 é de 300 mensagens SQS (`BET`, `WIN` e `LOSS` alternados) e 60 `BET`s HTTP em 10 wallets. O `SIGKILL` em duas das três instâncias acontece quando cerca de 1/3 das transações SQS já existem | Deixa trabalho em voo no momento do kill e mantém a rodada em cerca de 16 s no `test:stress` (T50, DP-3) |
 
 ## 2. Níveis
 

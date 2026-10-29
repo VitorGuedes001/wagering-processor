@@ -140,7 +140,7 @@ Resultado em 2026-10-29, no Windows: `bun run test:stress` com 160 pass e 0 fail
 
 ## Decisões pendentes
 
-Nenhuma aberta. DP-1 a DP-4 foram aprovadas pelo humano em 2026-10-29 conforme
+Nenhuma aberta. DP-1 a DP-4 foram aprovadas pelo humano em 2026-10-29 conforme as propostas. DP-1 a DP-3 viraram D75 a D77 (TESTES §1); a DP-4 é dívida e não vira Dn. Texto original:
 as propostas abaixo e implementadas assim. O texto fica como registro.
 
 - **DP-1. Visibilidade curta nas filas de teste do C-05 e do C-08.** TESTES 3.2
