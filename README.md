@@ -65,4 +65,5 @@ GET /health/ready
 - [docs/TESTES.md](docs/TESTES.md): plano de testes e infraestrutura de concorrência
 - [docs/PLANO.md](docs/PLANO.md): blocos de implementação com timebox e cortes por orçamento
 - [docs/EXECUCAO.md](docs/EXECUCAO.md): execução com agentes em paralelo, revisão humana e marcos
+- [docs/ONDA-1.md](docs/ONDA-1.md): o que a onda 1 entregou, como testar e o que revisar
 - `ARCHITECTURE.md`: decisões e trade-offs (a criar)
