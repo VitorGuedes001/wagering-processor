@@ -1,6 +1,7 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { SQSClient } from '@aws-sdk/client-sqs';
 import { APP_CONFIG, type AppConfig } from '../config';
+import { SqsInputQueue } from './sqs-input-queue';
 
 @Global()
 @Module({
@@ -18,7 +19,15 @@ import { APP_CONFIG, type AppConfig } from '../config';
           },
         }),
     },
+    SqsInputQueue,
   ],
-  exports: [SQSClient],
+  exports: [SQSClient, SqsInputQueue],
 })
-export class MessagingModule {}
+export class MessagingModule implements OnApplicationShutdown {
+  constructor(@Inject(SQSClient) private readonly sqs: SQSClient) {}
+
+  /** ARQUITETURA 7.3 passo 5. Roda depois do `beforeApplicationShutdown` do consumidor. */
+  onApplicationShutdown(): void {
+    this.sqs.destroy();
+  }
+}
