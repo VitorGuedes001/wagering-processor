@@ -1,4 +1,3 @@
-import { ConnectionException } from '@mikro-orm/core';
 import { TransientInfrastructureError, UniqueViolationError, type UniqueConstraint } from '../../application/ports';
 
 /**
@@ -22,12 +21,39 @@ const UNIQUE_CONSTRAINTS: ReadonlySet<string> = new Set<UniqueConstraint>([
   'ledger_wallet_version_uq',
 ]);
 
-/** `lock_timeout`, deadlock, `statement_timeout`, servidor derrubando a sessão (SCHEMA 5). */
-const TRANSIENT_SQLSTATES: ReadonlySet<string> = new Set(['55P03', '40P01', '57014', '57P01']);
+/**
+ * `lock_timeout`, deadlock, `statement_timeout`, sessão derrubada pelo servidor
+ * (`57P01`–`57P03`) e `idle_in_transaction_session_timeout` de D21 (`25P03`). SCHEMA 5.
+ */
+const TRANSIENT_SQLSTATES: ReadonlySet<string> = new Set(['55P03', '40P01', '57014', '57P01', '57P02', '57P03', '25P03']);
+
+/** Falha de socket antes de existir SQLSTATE: o Postgres nem respondeu. */
+const NETWORK_CODES: ReadonlySet<string> = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ECONNABORTED',
+  'ETIMEDOUT',
+  'EPIPE',
+  'ENOTFOUND',
+]);
+
+/**
+ * Conexão que caiu no meio da transação. O `pg` rejeita a query seguinte (ou o
+ * COMMIT) sem `code`, só com a mensagem, e o conversor do MikroORM para Postgres
+ * não emite `ConnectionException`.
+ */
+const LOST_CONNECTION_MESSAGE = /Connection terminated|not queryable|connection error/i;
 
 interface PgErrorFields {
   code?: unknown;
   constraint?: unknown;
+}
+
+function isTransient(error: Error, code: unknown): boolean {
+  if (typeof code === 'string') {
+    return TRANSIENT_SQLSTATES.has(code) || code.startsWith('08') || NETWORK_CODES.has(code);
+  }
+  return LOST_CONNECTION_MESSAGE.test(error.message);
 }
 
 /**
@@ -45,11 +71,7 @@ export function translateDbError(error: unknown): unknown {
     return new UniqueViolationError(constraint as UniqueConstraint, { cause: error });
   }
 
-  // Classe 08 é falha de conexão; ConnectionException cobre ECONNREFUSED e afins.
-  const transient =
-    error instanceof ConnectionException ||
-    (typeof code === 'string' && (TRANSIENT_SQLSTATES.has(code) || code.startsWith('08')));
-  if (transient) {
+  if (isTransient(error, code)) {
     return new TransientInfrastructureError(error.message, { cause: error });
   }
 

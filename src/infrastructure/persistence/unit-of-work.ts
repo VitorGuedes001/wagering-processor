@@ -39,12 +39,23 @@ export class MikroOrmUnitOfWork implements UnitOfWork {
     );
   }
 
-  /** Wallet e ledger do mesmo snapshot, sem lock (D22). Escrita falha com `25006`. */
+  /**
+   * Wallet e ledger do mesmo snapshot, sem lock (D22). Escrita falha com `25006`.
+   * Sem `lock_timeout`, porque não trava nada, mas com os outros dois de D21: um
+   * snapshot parado seguraria a conexão e o horizonte de limpeza do Postgres.
+   */
   readSnapshot<T>(work: (tx: TxRepositories) => Promise<T>): Promise<T> {
-    return this.transaction(async (em) => work(this.repositories(em)), {
-      isolationLevel: IsolationLevel.REPEATABLE_READ,
-      readOnly: true,
-    });
+    return this.transaction(
+      async (em) => {
+        await em.execute(
+          `select set_config('statement_timeout', ?, true),
+                  set_config('idle_in_transaction_session_timeout', ?, true)`,
+          [STATEMENT_TIMEOUT, IDLE_IN_TRANSACTION_TIMEOUT],
+        );
+        return work(this.repositories(em));
+      },
+      { isolationLevel: IsolationLevel.REPEATABLE_READ, readOnly: true },
+    );
   }
 
   /**
