@@ -6,17 +6,18 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 import { EntityManager } from '@mikro-orm/postgresql';
 import { loadConfig, type AppConfig } from '../../src/infrastructure/config';
 import { ReadinessProbe } from '../../src/infrastructure/health/readiness-probe';
+import { AppLogger } from '../../src/infrastructure/observability/logger';
 import {
-  AppLogger,
-  runWithLogContext,
-  updateLogContext,
-} from '../../src/infrastructure/observability/logger';
+  runWithRequestContext,
+  updateRequestContext,
+} from '../../src/infrastructure/observability/request-context';
 import {
   MetricsRegistry,
 } from '../../src/infrastructure/observability/metrics';
 import { ObservabilityModule } from '../../src/infrastructure/observability/observability.module';
 import { HealthController } from '../../src/interface/health/health.controller';
-import { MetricsModule } from '../../src/interface/http/metrics.module';
+import type { UnitOfWork } from '../../src/application/ports';
+import { WageringModule } from '../../src/interface/wagering.module';
 import { createTestDatabase, type TestDatabase } from '../support/database';
 import { assertAllWalletsConsistent } from '../support/invariants';
 import { createTestQueues, type TestQueues } from '../support/queues';
@@ -187,7 +188,7 @@ describe('I-22 e I-23: Observabilidade base', () => {
 
     test('Endpoint HTTP GET /metrics expõe formato Prometheus via servidor Nest', async () => {
       @Module({
-        imports: [ObservabilityModule, MetricsModule],
+        imports: [ObservabilityModule, WageringModule.withUnitOfWork({} as UnitOfWork)],
       })
       class TestObservabilityAppModule {}
 
@@ -214,7 +215,7 @@ describe('I-22 e I-23: Observabilidade base', () => {
       const logs: string[] = [];
       const logger = new AppLogger((line) => logs.push(line));
 
-      await runWithLogContext(
+      await runWithRequestContext(
         {
           correlationId: 'corr-uuid-1',
           transactionId: 'tx-uuid-2',
@@ -227,7 +228,7 @@ describe('I-22 e I-23: Observabilidade base', () => {
           // Sub-rotina assíncrona
           await new Promise((resolve) => setTimeout(resolve, 5));
 
-          updateLogContext({ kind: 'BET', status: 'PROCESSED' });
+          updateRequestContext({ kind: 'BET', status: 'PROCESSED' });
           logger.log('Aposta processada com sucesso');
         },
       );
@@ -256,7 +257,7 @@ describe('I-22 e I-23: Observabilidade base', () => {
       const logs: string[] = [];
       const logger = new AppLogger((line) => logs.push(line));
 
-      runWithLogContext({ correlationId: 'corr-5.1' }, () => {
+      runWithRequestContext({ correlationId: 'corr-5.1' }, () => {
         // Objeto com amount e balance
         logger.log('Aposta recebida', {
           amount: '100.00',
@@ -311,12 +312,12 @@ describe('I-22 e I-23: Observabilidade base', () => {
       });
 
       await Promise.all([
-        runWithLogContext({ correlationId: 'task-A', walletId: 'wallet-A' }, async () => {
+        runWithRequestContext({ correlationId: 'task-A', walletId: 'wallet-A' }, async () => {
           logger.log('Passo 1 A');
           await new Promise((r) => setTimeout(r, 10));
           logger.log('Passo 2 A');
         }),
-        runWithLogContext({ correlationId: 'task-B', walletId: 'wallet-B' }, async () => {
+        runWithRequestContext({ correlationId: 'task-B', walletId: 'wallet-B' }, async () => {
           logger.log('Passo 1 B');
           await new Promise((r) => setTimeout(r, 5));
           logger.log('Passo 2 B');

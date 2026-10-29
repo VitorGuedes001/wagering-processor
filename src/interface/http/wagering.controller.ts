@@ -13,29 +13,28 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { RequestErrorCode } from '../../application/contracts';
-import { type TransactionQueriesPort } from '../../application/queries';
+import type { ProviderIdentityPort } from '../../application/ports';
+import { ApplicationTransactionQueries, type TransactionQueriesPort } from '../../application/queries';
+import { SubmitWagerTransaction } from '../../application/submit-wager-transaction';
 import type { SubmittableKind } from '../../domain/wager-transaction';
+import { getCorrelationId } from '../../infrastructure/observability/request-context';
+import { PROVIDER_IDENTITY } from '../../infrastructure/provider-identity';
 import { AuthGuard } from './auth.guard';
-import { getCorrelationId } from './correlation-id.middleware';
 import { HttpErrorFilter, mapSubmitOutcomeToResponse } from './error-mapping';
 import { idempotencyKeyHeaderSchema, wagerTransactionSchema } from './schemas';
 import type { HttpRequest, HttpResponse } from './types';
-import {
-  SUBMIT_WAGER_USE_CASE,
-  type SubmitWagerUseCase,
-} from './use-case-handlers';
-
-export const TRANSACTION_QUERIES = Symbol('TRANSACTION_QUERIES');
 
 @Controller()
 @UseGuards(AuthGuard)
 @UseFilters(HttpErrorFilter)
 export class WageringController {
   constructor(
-    @Inject(SUBMIT_WAGER_USE_CASE)
-    private readonly submitWagerUseCase: SubmitWagerUseCase,
-    @Inject(TRANSACTION_QUERIES)
+    @Inject(SubmitWagerTransaction)
+    private readonly submitWagerUseCase: Pick<SubmitWagerTransaction, 'execute'>,
+    @Inject(ApplicationTransactionQueries)
     private readonly transactionQueries: TransactionQueriesPort,
+    @Inject(PROVIDER_IDENTITY)
+    private readonly providerIdentity: ProviderIdentityPort,
   ) {}
 
   /**
@@ -51,6 +50,9 @@ export class WageringController {
   ) {
     const idempotencyKey = idempotencyKeyHeaderSchema.parse(rawIdempotencyKey);
     const validated = wagerTransactionSchema.parse(rawBody);
+
+    // Ponto de extensão da auth (D31): hoje aceita tudo.
+    this.providerIdentity.assertMaySubmit(req.caller ?? { providerId: undefined }, validated.providerId);
 
     const correlationId = req.correlationId || getCorrelationId() || '';
 

@@ -1,12 +1,16 @@
 import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/common';
+import type { HttpRequest } from './types';
 
 /**
- * Ponto de extensão no-op para autenticação (CHALLENGE §2, ARQUITETURA §6, D31).
- * Não implementa validação de credenciais, permitindo integração futura com IdP (Keycloak/Zitadel).
+ * Ponto de extensão no-op para autenticação (CHALLENGE §2, ARQUITETURA §10, D31).
+ * Anexa um chamador sem `providerId`. Com um IdP, validaria o JWT pelo JWKS e
+ * preencheria `providerId` com o `azp` do token.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
-  canActivate(_context: ExecutionContext): boolean {
+  canActivate(context: ExecutionContext): boolean {
+    const req = context.switchToHttp().getRequest<HttpRequest>();
+    req.caller = { providerId: undefined };
     return true;
   }
 }

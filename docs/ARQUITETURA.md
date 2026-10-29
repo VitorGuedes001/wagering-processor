@@ -62,20 +62,25 @@ src/
     events/  integration-event.ts  wager-transaction-processed.ts  …
   application/
     ports.ts                       # todas as portas, num arquivo só
+    contracts.ts                   # comandos, views e desfechos dos use cases (D49)
     submit-wager-transaction.ts    create-wallet.ts
     resolve-pending-references.ts  publish-outbox.ts
     reconcile-wallet.ts            queries.ts   # leituras simples
   infrastructure/
-    persistence/  persistence.module.ts  mikro-orm.config.ts  records/*.ts  unit-of-work.ts  *-repository.ts  db-errors.ts
+    persistence/  persistence.module.ts (fornece UNIT_OF_WORK)  mikro-orm.config.ts  records/*.ts  unit-of-work.ts  *-repository.ts  db-errors.ts
     messaging/    messaging.module.ts  sqs-event-publisher.ts
-    observability/  logger.ts  metrics.ts  request-context.ts
+    observability/  observability.module.ts  logger.ts  metrics.ts  request-context.ts   # um único ALS (D29)
     health/       readiness-probe.ts   # toca Postgres e SQS, por isso fica fora de interface
-    clock.ts  id-generator.ts  config.ts
+    clock.ts  id-generator.ts  config.ts  config.module.ts
+    provider-identity.ts               # ProviderIdentityPort que aceita tudo (D31)
+    fault-injector.ts                  # pontos de falha dos testes (TESTES 3.4)
   interface/
-    http/     wallets.controller.ts  wagering.controller.ts  error-mapping.ts  schemas.ts  auth.guard.ts
+    wagering.module.ts                 # controllers, use cases e workers (§11)
+    http/     wallets.controller.ts  wagering.controller.ts  metrics.controller.ts
+              error-mapping.ts  schemas.ts  auth.guard.ts  correlation-id.middleware.ts  types.ts
     sqs/      wager-transaction.consumer.ts
     workers/  outbox.worker.ts  pending-reference.worker.ts
-    health/   health.controller.ts
+    health/   health.module.ts  health.controller.ts
   app.module.ts  main.ts
 migrations/
 ```

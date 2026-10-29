@@ -1,12 +1,12 @@
-import type { Clock, IdGenerator, UnitOfWork } from '../ports';
-import { UniqueViolationError } from '../ports';
-import type { CreateWalletCommand, CreateWalletOutcome } from '../contracts';
-import { Money } from '../../domain/money';
-import { Wallet } from '../../domain/wallet';
-import { WagerTransaction } from '../../domain/wager-transaction';
-import { OutboxMessage } from '../../domain/outbox-message';
-import { WagerTransactionProcessed } from '../../domain/events/wager-transaction-processed';
-import { WalletBalanceChanged } from '../../domain/events/wallet-balance-changed';
+import type { Clock, IdGenerator, UnitOfWork } from './ports';
+import { UniqueViolationError } from './ports';
+import type { CreateWalletCommand, CreateWalletOutcome } from './contracts';
+import { Money } from '../domain/money';
+import { Wallet } from '../domain/wallet';
+import { WagerTransaction } from '../domain/wager-transaction';
+import { OutboxMessage } from '../domain/outbox-message';
+import { WagerTransactionProcessed } from '../domain/events/wager-transaction-processed';
+import { WalletBalanceChanged } from '../domain/events/wallet-balance-changed';
 
 export class CreateWallet {
   constructor(
