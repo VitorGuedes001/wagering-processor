@@ -8,9 +8,12 @@ import {
 import { CreateWallet } from '../application/create-wallet';
 import type { Clock, IdGenerator, UnitOfWork } from '../application/ports';
 import { ApplicationTransactionQueries, ApplicationWalletQueries } from '../application/queries';
+import { RecordProcessingFailure } from '../application/record-processing-failure';
 import { SubmitWagerTransaction } from '../application/submit-wager-transaction';
 import { SystemClock } from '../infrastructure/clock';
+import { APP_CONFIG, loadConfig } from '../infrastructure/config';
 import { RandomUuidGenerator } from '../infrastructure/id-generator';
+import { SqsInputQueue } from '../infrastructure/messaging/sqs-input-queue';
 import { ObservabilityModule } from '../infrastructure/observability/observability.module';
 import { UNIT_OF_WORK } from '../infrastructure/persistence/persistence.module';
 import { AcceptAllProviderIdentity, PROVIDER_IDENTITY } from '../infrastructure/provider-identity';
@@ -20,6 +23,7 @@ import { HttpErrorFilter } from './http/error-mapping';
 import { MetricsController } from './http/metrics.controller';
 import { WageringController } from './http/wagering.controller';
 import { WalletsController } from './http/wallets.controller';
+import { WagerTransactionConsumer } from './sqs/wager-transaction.consumer';
 
 const WAGERING_PROVIDERS: Provider[] = [
   AuthGuard,
@@ -40,6 +44,14 @@ const WAGERING_PROVIDERS: Provider[] = [
       new SubmitWagerTransaction(uow, clock, ids),
   },
   {
+    provide: RecordProcessingFailure,
+    inject: [UNIT_OF_WORK, SystemClock, RandomUuidGenerator],
+    useFactory: (uow: UnitOfWork, clock: Clock, ids: IdGenerator) =>
+      new RecordProcessingFailure(uow, clock, ids),
+  },
+  // Só consome se ENABLE_CONSUMER (D28); depende do SqsInputQueue do MessagingModule.
+  WagerTransactionConsumer,
+  {
     provide: ApplicationWalletQueries,
     inject: [UNIT_OF_WORK],
     useFactory: (uow: UnitOfWork) => new ApplicationWalletQueries(uow),
@@ -52,7 +64,7 @@ const WAGERING_PROVIDERS: Provider[] = [
 ];
 
 /**
- * Controllers e use cases (ARQUITETURA §11). O `UNIT_OF_WORK` vem do
+ * Controllers, use cases e consumidor SQS (ARQUITETURA §11). O `UNIT_OF_WORK` vem do
  * `PersistenceModule`; `withUnitOfWork` liga uma instância pronta (testes).
  */
 @Module({
@@ -61,10 +73,19 @@ const WAGERING_PROVIDERS: Provider[] = [
   providers: WAGERING_PROVIDERS,
 })
 export class WageringModule implements NestModule {
+  /**
+   * Só HTTP, com uma UoW pronta (testes em processo). Sem fila: o consumidor
+   * recebe `ENABLE_CONSUMER=false` (D28) e nenhum adaptador SQS. A config não lê
+   * `process.env`, então nunca aponta para as filas padrão (TESTES D35).
+   */
   static withUnitOfWork(uow: UnitOfWork): DynamicModule {
     return {
       module: WageringModule,
-      providers: [{ provide: UNIT_OF_WORK, useValue: uow }],
+      providers: [
+        { provide: UNIT_OF_WORK, useValue: uow },
+        { provide: APP_CONFIG, useValue: loadConfig({ ENABLE_CONSUMER: 'false' }) },
+        { provide: SqsInputQueue, useValue: null },
+      ],
     };
   }
 

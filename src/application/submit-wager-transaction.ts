@@ -95,6 +95,16 @@ export class SubmitWagerTransaction {
           }
         }
 
+        // Desfecho que retorna antes do fim também encerra a mensagem: o processamento
+        // terminou e o resultado está na transação (MODELAGEM 7, SCHEMA 4.4).
+        const closeInbox = async (outcome: SubmitOutcome): Promise<SubmitOutcome> => {
+          if (inboxMessage) {
+            inboxMessage.markProcessed(this.clock.now());
+            await tx.inbox.markProcessed(inboxMessage);
+          }
+          return outcome;
+        };
+
         // 2. Atalho para replays antes do lock da wallet (SCHEMA 4.2 passo 2: busca apenas idempotency_key)
         const fastTx = await tx.transactions.findByIdempotencyKey(
           command.providerId,
@@ -102,19 +112,19 @@ export class SubmitWagerTransaction {
         );
         if (fastTx) {
           if (fastTx.matchesPayload(hash)) {
-            return {
+            return closeInbox({
               type: 'RESULT',
               view: toTransactionView(fastTx),
               idempotentReplay: true,
-            };
+            });
           }
-          return { type: 'IDEMPOTENCY_CONFLICT' };
+          return closeInbox({ type: 'IDEMPOTENCY_CONFLICT' });
         }
 
         // 3. SELECT ... FOR UPDATE na wallet (D15, SCHEMA 4.2 passo 3)
         const wallet = await tx.wallets.lockById(command.walletId);
         if (!wallet) {
-          return { type: 'WALLET_NOT_FOUND' };
+          return closeInbox({ type: 'WALLET_NOT_FOUND' });
         }
 
         // 4. Re-checagem sob o lock da wallet (SCHEMA 4.2 passo 4)
@@ -124,13 +134,13 @@ export class SubmitWagerTransaction {
         );
         if (lockedTx) {
           if (lockedTx.matchesPayload(hash)) {
-            return {
+            return closeInbox({
               type: 'RESULT',
               view: toTransactionView(lockedTx),
               idempotentReplay: true,
-            };
+            });
           }
-          return { type: 'IDEMPOTENCY_CONFLICT' };
+          return closeInbox({ type: 'IDEMPOTENCY_CONFLICT' });
         }
 
         const lockedExt = await tx.transactions.findByExternalId(
@@ -138,7 +148,7 @@ export class SubmitWagerTransaction {
           command.externalTransactionId,
         );
         if (lockedExt) {
-          return { type: 'EXTERNAL_ID_CONFLICT' };
+          return closeInbox({ type: 'EXTERNAL_ID_CONFLICT' });
         }
 
         // 5. Busca referência e verifica se já foi revertida (SCHEMA 4.2 passo 5)
