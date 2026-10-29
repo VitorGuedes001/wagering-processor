@@ -7,11 +7,13 @@ import {
 import { ReflectMetadataProvider } from '@mikro-orm/decorators/legacy';
 import { defineConfig, MikroORM } from '@mikro-orm/postgresql';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { PublishOutbox } from '../../src/application/publish-outbox';
 import type { EventContext } from '../../src/domain/events/integration-event';
 import { WalletBalanceChanged } from '../../src/domain/events/wallet-balance-changed';
 import { Money } from '../../src/domain/money';
 import { OutboxMessage } from '../../src/domain/outbox-message';
 import { Wallet } from '../../src/domain/wallet';
+import { SystemClock } from '../../src/infrastructure/clock';
 import { SqsEventPublisher } from '../../src/infrastructure/messaging/sqs-event-publisher';
 import { MetricsRegistry } from '../../src/infrastructure/observability/metrics';
 import { MikroOrmInboxRepository } from '../../src/infrastructure/persistence/inbox-repository';
@@ -101,7 +103,8 @@ describe('I-16: Outbox Worker Integration (TESTES §4.2; ARQUITETURA §7.3; D18,
     } as any;
 
     const publisher = new SqsEventPublisher(queues.sqs, config);
-    const worker = new OutboxWorker(uow, publisher, config, metrics);
+    const publishOutbox = new PublishOutbox(uow, publisher, new SystemClock());
+    const worker = new OutboxWorker(publishOutbox, config, metrics);
 
     const walletId = randomUUID();
     const eventId = randomUUID();
@@ -213,6 +216,22 @@ describe('I-16: Outbox Worker Integration (TESTES §4.2; ARQUITETURA §7.3; D18,
     const exitCode = await proc.exited;
     expect(exitCode).not.toBe(0);
 
+    // Sobe o worker após o crash e roda um tick para provar que nada sai
+    const config = {
+      OUTBOX_POLL_MS: 50,
+      OUTBOX_BATCH: 10,
+      OUTBOX_LEASE_MS: 30000,
+      SHUTDOWN_GRACE_MS: 5000,
+      ENABLE_OUTBOX_WORKER: true,
+      SQS_EVENTS_QUEUE: queues.events,
+    } as any;
+    const publisher = new SqsEventPublisher(queues.sqs, config);
+    const publishOutbox = new PublishOutbox(uow, publisher, new SystemClock());
+    const worker = new OutboxWorker(publishOutbox, config, metrics);
+
+    const published = await worker.tick();
+    expect(published).toBe(0);
+
     // Verifica que nada persiste na tabela outbox_message
     const [outboxCount] = await db.sql<Array<{ count: number }>>`
       SELECT COUNT(*)::int AS count FROM outbox_message WHERE id = ${eventId}
@@ -247,7 +266,8 @@ describe('I-16: Outbox Worker Integration (TESTES §4.2; ARQUITETURA §7.3; D18,
       },
     };
 
-    const worker = new OutboxWorker(uow, failingPublisher, config, metrics);
+    const publishOutbox = new PublishOutbox(uow, failingPublisher, new SystemClock());
+    const worker = new OutboxWorker(publishOutbox, config, metrics);
 
     const eventId = randomUUID();
     const occurredAt = new Date(Date.now() - 5000); // 5 segundos atrás
@@ -270,10 +290,6 @@ describe('I-16: Outbox Worker Integration (TESTES §4.2; ARQUITETURA §7.3; D18,
       await tx.outbox.enqueue([msg]);
     });
 
-    // Lag antes do tick deve ser de ~5s
-    const lagBefore = await worker.computeLag(new Date());
-    expect(lagBefore).toBeGreaterThanOrEqual(4.5);
-
     // Executa tick com publisher falho
     const tickTime = new Date();
     const published = await worker.tick(tickTime);
@@ -287,5 +303,9 @@ describe('I-16: Outbox Worker Integration (TESTES §4.2; ARQUITETURA §7.3; D18,
     expect(row?.attempts).toBe(1);
     // Para attempts = 1: base = 1000ms, backoff = 2^1 * 1000 = 2000ms
     expect(row?.next_attempt_at.getTime()).toBeGreaterThanOrEqual(tickTime.getTime() + 1900);
+
+    // Verifica que a métrica wagering_retries_total foi incrementada para o componente outbox
+    const metricsOutput = await metrics.registry.metrics();
+    expect(metricsOutput).toContain('wagering_retries_total{component="outbox"} 1');
   });
 });

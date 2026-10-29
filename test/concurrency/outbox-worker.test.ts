@@ -93,11 +93,11 @@ describe('C-06 e C-06b: Concorrência e Tolerância a Falhas no Outbox Worker (T
     `;
     expect(inserted?.count).toBe(totalEvents);
 
-    // Sobe 2 instâncias com worker ativo e HTTP ativo (para readiness)
+    // Sobe 2 instâncias só com o worker de outbox (sem HTTP) conforme C-06
     const cluster: AppCluster = await spawnCluster(2, {
       DB_NAME: db.name,
       SQS_EVENTS_QUEUE: queues.events,
-      ENABLE_HTTP: 'true',
+      ENABLE_HTTP: 'false',
       ENABLE_CONSUMER: 'false',
       ENABLE_OUTBOX_WORKER: 'true',
       ENABLE_REFERENCE_WORKER: 'false',
@@ -118,11 +118,14 @@ describe('C-06 e C-06b: Concorrência e Tolerância a Falhas no Outbox Worker (T
         { timeoutMs: 30000, intervalMs: 250 },
       );
 
-      // Drena a fila do SQS e coleta todos os eventIds recebidos
+      // Drena a fila do SQS e contabiliza entregas e duplicatas (TESTES §4)
       const receivedEventIds = new Set<string>();
+      const duplicateEventIds = new Set<string>();
+      let totalDeliveries = 0;
+      let duplicateCount = 0;
       let emptyCount = 0;
 
-      while (emptyCount < 3 && receivedEventIds.size < totalEvents) {
+      while (emptyCount < 3) {
         const sqsRes = await queues.sqs.send(
           new ReceiveMessageCommand({
             QueueUrl: queues.eventsUrl,
@@ -139,8 +142,14 @@ describe('C-06 e C-06b: Concorrência e Tolerância a Falhas no Outbox Worker (T
 
         emptyCount = 0;
         for (const msg of msgs) {
+          totalDeliveries++;
           const body = JSON.parse(msg.Body!);
-          receivedEventIds.add(body.eventId);
+          if (receivedEventIds.has(body.eventId)) {
+            duplicateCount++;
+            duplicateEventIds.add(body.eventId);
+          } else {
+            receivedEventIds.add(body.eventId);
+          }
         }
 
         // Ack em lote
@@ -160,6 +169,18 @@ describe('C-06 e C-06b: Concorrência e Tolerância a Falhas no Outbox Worker (T
       for (const expectedId of expectedEventIds) {
         expect(receivedEventIds.has(expectedId)).toBe(true);
       }
+
+      // Registra e valida contagem de duplicatas (TESTES §4: duplicatas registradas, não falhas)
+      console.log(
+        JSON.stringify({
+          msg: 'C-06 estatísticas de entrega SQS',
+          totalDeliveries,
+          uniqueEvents: receivedEventIds.size,
+          duplicates: duplicateCount,
+        }),
+      );
+      expect(totalDeliveries).toBeGreaterThanOrEqual(totalEvents);
+      expect(totalDeliveries).toBe(totalEvents + duplicateCount);
     } finally {
       await cluster.killAll('SIGTERM');
     }
@@ -247,11 +268,11 @@ describe('C-06 e C-06b: Concorrência e Tolerância a Falhas no Outbox Worker (T
       expect(r.next_attempt_at.getTime()).toBeGreaterThan(now.getTime());
     }
 
-    // 2. Sobe a Instância B normal
+    // 2. Sobe a Instância B normal só com worker de outbox (sem HTTP)
     const appB = await spawnApp({
       DB_NAME: db.name,
       SQS_EVENTS_QUEUE: queues.events,
-      ENABLE_HTTP: 'true',
+      ENABLE_HTTP: 'false',
       ENABLE_CONSUMER: 'false',
       ENABLE_OUTBOX_WORKER: 'true',
       ENABLE_REFERENCE_WORKER: 'false',
