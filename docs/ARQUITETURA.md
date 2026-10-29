@@ -28,6 +28,9 @@ custo sem retorno.
 | D49 | Tipos de entrada e saída dos use cases (`WagerCommand`, `TransactionView`, `SubmitOutcome` etc.) ficam em `src/application/contracts.ts`, separados das portas em `ports.ts` | O HTTP (T31) programa contra eles antes do use case (T30) existir (T01) |
 | D50 | `RequestErrorCode` (MODELAGEM 10.2) fica em `application/contracts.ts`. `FailureCode` fica em `domain` | Erro de requisição nasce no use case. `FailureCode` é gravado na transação (T01) |
 | D62 | `OutboxRepository.claimDue` usa a transação recebida. O worker de outbox chama o claim sozinho num `uow.run` curto, publica fora de transação e faz `markPublished` ou `scheduleRetry` de cada mensagem no seu próprio `uow.run` | A porta fica na Unit of Work como as outras (D25). A "transação curta própria" de D18 vira responsabilidade do worker, e a publicação nunca acontece com transação aberta (restrição 4). Decidida na revisão da T22 |
+| D63 | O consumidor lê o `maxReceiveCount` da `RedrivePolicy` da própria fila, uma vez no boot. Sem política, nenhuma entrega é a última | A fila é a fonte da verdade. Uma env nova duplicaria o número e poderia divergir do script de criação das filas (T40, DP-2) |
+| D64 | `FAILED`/`PROCESSING_FAILED` só é gravado na última entrega, quando o comando é válido e o erro é transitório ou bug, num `uow.run` separado, sem evento no outbox e só se `(providerId, idempotencyKey)` ainda não existe (`RecordProcessingFailure`) | Nos casos permanentes não há transação identificável para gravar (payload inválido, mismatch, erro de domínio). Cumpre SCHEMA 4.4 sem inventar transação (T40, DP-3) |
+| D65 | `SubmitWagerTransaction` marca a inbox como processada em todo retorno dentro do `uow.run` que passou por ela, inclusive replay, conflitos e `WALLET_NOT_FOUND`. O retry por `23505` não regrava a inbox e fica como dívida | MODELAGEM 7: mensagem rejeitada por negócio também fica `processed` (T40, DP-4) |
 
 ## 2. Camadas
 

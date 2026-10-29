@@ -29,6 +29,7 @@ Duas regras inegociáveis vêm do enunciado:
 | D40 | Invariante `wallet.balance == Σ ledger` (mais a cadeia) checada no `afterEach` de **todo** teste de integração e concorrência, para todas as wallets do banco do arquivo | §13: "invariante final de todos os testes". Com um banco por arquivo, "todas as wallets" é barato |
 | D41 | O suite de concorrência roda também com `--rerun-each 10` (`test:stress`) | Teste de corrida que passa uma vez não prova nada. Dez rodadas pegam o flaky antes do avaliador |
 | D60 | O banco template leva sufixo por worktree: `wagering_template_<hash curto do caminho absoluto do worktree>` | Todos os worktrees compartilham o mesmo PostgreSQL. Com nome por worktree, execuções em paralelo não derrubam nem clonam o template de outra branch (T15) |
+| D66 | No I-15, a falha transitória é simulada com o portão de lock (D37) e `DB_LOCK_TIMEOUT_MS` curto, e não com `docker pause` | O Postgres é compartilhado pelos worktrees, e o AGENTS proíbe pausar containers. O `lock_timeout` vira erro transitório e prova o mesmo retry com sucesso (T40, DP-5) |
 
 ## 2. Níveis
 
@@ -202,7 +203,7 @@ Os alvos estão em MODELAGEM 12: `Money`, `Wallet`, `WagerTransaction`,
 | I-12 | mesma operação via HTTP e depois via SQS → a segunda é replay, sem segundo débito | D24, payloadHash |
 | I-13 | inbox: a mesma mensagem enviada 3× (`messageId` igual) → 1 efeito, 3 acks | §10 |
 | I-14 | inbox: mesmo `messageId`, payload diferente → DLQ | D7 |
-| I-15 | retry e DLQ: mensagem inválida chega à DLQ após 5 recebimentos. Com falha transitória simulada (Postgres pausado com `docker pause`), a mensagem é reprocessada com sucesso depois de `unpause` | §10, §13 |
+| I-15 | retry e DLQ: mensagem inválida chega à DLQ após 5 recebimentos. Com falha transitória simulada (wallet travada pelo portão de lock com `lock_timeout` curto, D66), a mensagem é reprocessada com sucesso depois que o lock é solto | §10, §13 |
 | I-16 | outbox: evento publicado só depois do commit (com `uow.before-commit`, nada sai). Publicado uma vez no caminho feliz | restrição 4 |
 | I-17 | outbox: SQS indisponível (`docker pause` do LocalStack) → `attempts` sobe e o lag cresce. Depois de `unpause`, tudo é publicado | §11 |
 | I-18 | `PENDING_REFERENCE`: `REFUND` antes da `BET` → 202. A `BET` chega, o worker processa e o `REFUND` vira `PROCESSED`, com eventos | §7.1 |
