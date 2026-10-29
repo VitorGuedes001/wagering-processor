@@ -1,14 +1,31 @@
 # T40 — Consumidor SQS 🔒
 
-> Estado: Abordagem · Raia: C · Revisor: G · Branch: `t40-sqs-consumer`
+> Estado: Testada · Raia: C · Revisor: G · Branch: `t40-sqs-consumer`
 
 ## O que muda
 
-Uma frase por arquivo tocado.
+- `src/interface/sqs/wager-transaction.consumer.ts` (novo): laço de long polling com concorrência limitada, ordem por `MessageGroupId` dentro do lote, ack só depois do commit, visibilidade 0 ou backoff, métricas, logs com contexto e drenagem no `SIGTERM`.
+- `src/interface/sqs/wager-transaction.message.ts` (novo): schema do envelope, com `data` validado pelo schema do HTTP; `parseEnvelope`, `classifyOutcome`, `classifyError` e `retryDelaySeconds`, que são funções puras.
+- `src/infrastructure/messaging/sqs-input-queue.ts` (novo): adaptador da fila de entrada (receive, ack, visibilidade, `maxReceiveCount` lido da `RedrivePolicy`). É o único arquivo do consumidor que importa o AWS SDK.
+- `src/infrastructure/messaging/messaging.module.ts`: fornece o `SqsInputQueue` e fecha o `SQSClient` no shutdown.
+- `src/application/record-processing-failure.ts` (novo): grava `FAILED`/`PROCESSING_FAILED` na última entrega, numa transação própria (DP-3).
+- `src/application/submit-wager-transaction.ts`: marca a inbox `processed` nos retornos antecipados (DP-4). Commit próprio, `64005ef`, e mudança mínima por causa da T42.
+- `src/interface/wagering.module.ts`: registra `RecordProcessingFailure` e `WagerTransactionConsumer`. `withUnitOfWork` (testes em processo) sobe só o HTTP, com `ENABLE_CONSUMER=false` e sem adaptador SQS.
+- `test/integration/sqs-consumer.test.ts` (novo): I-12, I-13, I-14, I-15 (a e b) e a metade SQS do I-11, com app real e banco e filas próprios.
+- `test/support/queues.ts`: `sendEnvelope`, `queueDepth` e `peekBodies`.
+- `ARCHITECTURE.md` §8: inbox, classificação, retry, DLQ e desligamento. O outbox (§8.4) fica para a T41.
 
 ## Por quê
 
-Regras atendidas, com referência aos docs (ex.: MODELAGEM 4.3; D2).
+- **CHALLENGE §10 / D24:** o consumidor chama o mesmo use case do HTTP, com a inbox `(consumerName, messageId)` na mesma transação. O ack vem depois do commit.
+- **ARQUITETURA 7.2:** a tabela de classificação está em `classifyOutcome`/`classifyError`. A DLQ chega só pelo redrive (`maxReceiveCount = 5`), nunca por envio manual. O backoff é `min(2^receiveCount, 60)` s.
+- **D27 / restrição 5.1:** `data` passa pelo `wagerTransactionSchema` do HTTP, e `amount` numérico vai para a DLQ (I-11 via SQS).
+- **D7:** mesmo `messageId` com payload diferente vai para a DLQ, com log `error` (I-14).
+- **SCHEMA 4.4 / DP-3:** `FAILED` só na última entrega, numa transação separada.
+- **MODELAGEM 7 / DP-4:** todo desfecho que passou pela inbox a deixa `processed`.
+- **ARQUITETURA 7.3:** `SIGTERM` básico, passos 1 a 3 no consumidor e passo 5 no `MessagingModule`.
+- **Restrição 8 / D28:** nenhum estado de correção em memória. O consumidor só liga com `ENABLE_CONSUMER`.
+- **ARQUITETURA 9:** contadores do registry do T33 e contexto de log no ALS único (D29), sem valores monetários.
 
 ## Abordagem
 
@@ -160,15 +177,30 @@ Testes (`test/integration/sqs-consumer.test.ts`, app real com
 
 ## Ordem de leitura do diff
 
-1. `arquivo` — o que olhar nele
+1. `src/interface/sqs/wager-transaction.message.ts`: a tabela de ARQUITETURA 7.2 em `classifyOutcome`/`classifyError`. Ver também o `extend` do schema HTTP com `idempotencyKey` e `correlationId = causationId = messageId` (MODELAGEM 8).
+2. `src/interface/sqs/wager-transaction.consumer.ts`: em `handle → decide → apply`, ver o ack só depois do retorno do use case, o `FaultInjector` antes do `DeleteMessage`, a última entrega (métrica de DLQ e `RecordProcessingFailure`) e o fato de nunca haver `SendMessage` para a DLQ. Depois, `dispatch` (grupos em sequência) e `beforeApplicationShutdown`.
+3. `src/application/submit-wager-transaction.ts` (commit `64005ef`): `closeInbox` nos retornos antecipados.
+4. `src/application/record-processing-failure.ts`: as guardas (key ou id externo já existem, wallet ausente ou de outra moeda) e a ausência de evento no outbox.
+5. `src/infrastructure/messaging/sqs-input-queue.ts`: `ApproximateReceiveCount`, `abortSignal` no long poll e o cache da URL e do `maxReceiveCount`.
+6. `src/interface/wagering.module.ts`: o registro do consumidor e o `withUnitOfWork` sem fila.
+7. `test/integration/sqs-consumer.test.ts`: o I-13 usa `MessageDeduplicationId` distintos, e o I-15 (b) usa portão de lock com `lock_timeout` de 300 ms (DP-5).
+8. `ARCHITECTURE.md` §8.
 
 ## Como verificar
 
 ```bash
-bun run tarefa:gate
+bun run tarefa:gate                                   # typecheck, skills, unidade, arquitetura, integração, concorrência
+bun test ./test/integration/sqs-consumer.test.ts      # só o aceite da T40 (~6 s)
 ```
 
+Resultado em 2026-10-29: gate verde em todos os níveis (typecheck, skills,
+unidade, arquitetura, integração, concorrência). `sqs-consumer.test.ts` deu 6/6
+em 3 execuções seguidas.
+
 ## Decisões pendentes
+
+Nenhuma aberta. DP-1 a DP-5 foram aprovadas pelo humano em 2026-10-29 conforme
+as propostas abaixo e implementadas assim. O texto fica como registro.
 
 - **DP-1. Base estrutural: com ou sem `29e032b`.** O refactor da branch
   `fix-estrutura-onda3` move `application/use-cases/*` → `application/*.ts`,
@@ -232,10 +264,11 @@ bun run tarefa:gate
 Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
 `package.json`) que o humano aplica no merge.
 
-- **PI-1 (só se `29e032b` NÃO entrar na `main`):** em `src/app.module.ts`,
+- (nenhum) O `29e032b` entrou na `main` (`71dbc44`), então o PI-1 abaixo não se aplica.
+- ~~**PI-1 (só se `29e032b` NÃO entrar na `main`):** em `src/app.module.ts`,
   importar `SqsConsumerModule` de `./interface/sqs/sqs-consumer.module` na lista
   de `imports`. Com o refactor, nenhum pedido: o consumidor entra no
-  `wagering.module.ts`.
+  `wagering.module.ts`.~~
 - Nenhuma mudança em `package.json`/`bun.lock`: `@aws-sdk/client-sqs` e `zod` já
   são dependências.
 
@@ -246,6 +279,16 @@ Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
   testes são de T50.
 - Retry por `23505` no use case não regrava a inbox (ver DP-4).
 - Worker de outbox e publicação: T41.
+- A gravação de `FAILED` na última entrega (DP-3) não tem teste de integração.
+  Ela exige 5 falhas transitórias seguidas, com backoff de 2+4+8+16 s (~30 s).
+  Fica para a T50, junto com C-05 e C-10.
+- Para T41/T42: um worker que entrar no `WageringModule` e depender de
+  `MessagingModule` ou de `APP_CONFIG` precisa respeitar o `withUnitOfWork`
+  (testes em processo sem fila). Hoje ele fornece `APP_CONFIG` com
+  `ENABLE_CONSUMER=false` e `SqsInputQueue = null`.
+- `wagering_lock_conflicts_total` não é incrementado pelo consumidor. Distinguir
+  `lock_timeout` de outra falha transitória exigiria ler o SQLSTATE do driver na
+  camada `interface`. Hoje ele cai em `wagering_retries_total{component="sqs-consumer"}`.
 
 ## Revisão cruzada
 
