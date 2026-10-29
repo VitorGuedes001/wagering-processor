@@ -248,7 +248,53 @@ Detalhe em [docs/ARQUITETURA.md](docs/ARQUITETURA.md) §6 e [docs/MODELAGEM.md](
 
 ## 8. Mensageria: inbox, outbox, retry e DLQ
 
-_A escrever no B6 e B7._ Fonte: [docs/ARQUITETURA.md](docs/ARQUITETURA.md) §7, [docs/SCHEMA.md](docs/SCHEMA.md) §4.4–4.5.
+Fonte: [docs/ARQUITETURA.md](docs/ARQUITETURA.md) §7, [docs/SCHEMA.md](docs/SCHEMA.md) §4.4–4.5.
+
+### 8.1 Consumidor e inbox
+
+O consumidor (`src/interface/sqs/wager-transaction.consumer.ts`) faz long polling
+de 20 s em `wager-transactions.fifo`, com até `SQS_CONSUMER_CONCURRENCY`
+mensagens em andamento. No mesmo lote, mensagens do mesmo `MessageGroupId`
+rodam em sequência e grupos diferentes em paralelo. Isso aproveita a ordem do
+FIFO, mas a correção não depende dela: vem do lock da wallet e dos índices
+únicos.
+
+O envelope é validado por zod, e `data` usa o **mesmo** schema do HTTP. A
+mensagem entra no **mesmo** `SubmitWagerTransaction`, com
+`(consumerName, messageId)` do envelope. A linha da inbox é inserida na mesma
+transação SQL do débito, antes do lock da wallet, e marcada `processed` em
+qualquer desfecho. Uma duplicata espera no índice da inbox sem segurar a
+wallet. O ack (`DeleteMessage`) só acontece depois do commit. Se o processo
+morre entre os dois, a redelivery cai no `ON CONFLICT` e vira ack de duplicata.
+
+### 8.2 Classificação, retry e DLQ
+
+| Desfecho | Ação na fila |
+|---|---|
+| `RESULT` (qualquer status), duplicata na inbox | ack |
+| wallet inexistente, conflito de idempotência ou de id externo | ack + `warn` |
+| JSON/envelope/`type` inválido, `Money` inválido, mesmo `messageId` com payload diferente (D7) | visibilidade 0 até o redrive levar à DLQ |
+| falha transitória (`lock_timeout`, deadlock, conexão) e bug | visibilidade `min(2^receiveCount, 60)` s |
+
+Nenhuma mensagem é enviada à DLQ pelo código. O redrive da fila
+(`maxReceiveCount = 5`) faz isso, e o SQS conta as entregas, então não há janela
+em que a mensagem se perca. Na última entrega (`ApproximateReceiveCount` ≥
+`maxReceiveCount`, lido da `RedrivePolicy`), uma falha transitória ou bug com
+comando válido grava a transação como `FAILED`/`PROCESSING_FAILED`, numa
+transação separada (`RecordProcessingFailure`). Assim o provedor que reenviar
+recebe replay em vez de efeito tardio. O HTTP nunca grava `FAILED`: devolve 503.
+
+### 8.3 Desligamento
+
+No `SIGTERM`, o consumidor para de receber e aborta o long poll em curso. Depois
+espera as mensagens em andamento até `SHUTDOWN_GRACE_MS` e devolve à fila, com
+visibilidade 0, as recebidas e não iniciadas. O MikroORM e o cliente SQS fecham
+depois. Se o processo morrer sem drenar (`SIGKILL`), a correção continua: o commit
+é atômico e a redelivery cai na inbox.
+
+### 8.4 Outbox
+
+_A escrever na T41._
 
 ## 9. Referências fora de ordem
 
