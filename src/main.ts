@@ -8,7 +8,9 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: false });
   app.enableShutdownHooks();
   await app.listen(config.PORT);
-  console.log(JSON.stringify({ msg: 'listening', port: config.PORT, runtime: `bun ${Bun.version}` }));
+  const address = app.getHttpServer().address();
+  const actualPort = typeof address === 'object' && address !== null ? address.port : config.PORT;
+  console.log(JSON.stringify({ msg: 'listening', port: actualPort, runtime: `bun ${Bun.version}` }));
 }
 
 void bootstrap();
