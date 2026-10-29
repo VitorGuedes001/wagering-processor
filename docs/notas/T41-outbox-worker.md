@@ -84,7 +84,53 @@ Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
 
 Preenchido pelo agente da outra ferramenta.
 
+Revisor: Claude Code, 29/10/2026, sobre `bb99e57` (base `991a198`; `main` em `71dbc44`).
+
+**Gate.** `bun run tarefa:gate` recusa rodar: "a branch não contém a main atual". O
+revisor não faz rebase, então rodou os mesmos passos do gate à mão na branch:
+typecheck ok, skills ok, unidade + arquitetura 343/343, integração 131/131 (inclui
+I-16), concorrência 11/11 (inclui C-06 e C-06b). **Na árvore mesclada com a `main`**
+(`git merge-tree --write-tree main t41-outbox-worker` → `f640131`, sem conflito
+textual), o typecheck **falha**:
+
+```
+src/interface/workers/outbox.worker.ts(14,30): error TS2307: Cannot find module '../http/http.module'
+src/main.ts(8,30): error TS2307: Cannot find module './interface/http/http.module'
+```
+
+**Frente ao refactor `29e032b`.** Para adaptar: (a) `UNIT_OF_WORK` agora vem de
+`src/infrastructure/persistence/persistence.module.ts`; (b) `http.module.ts` não existe
+mais, e workers são registrados em `src/interface/wagering.module.ts` (ARQUITETURA
+§2.1, §11), arquivo que não é protegido pela regra 3; com isso o `WorkersModule` e o
+pedido ao integrador para editar `app.module.ts` deixam de fazer sentido; (c) o relógio
+existe como provider `SystemClock` no `WageringModule`, e o token `'CLOCK'` não é
+fornecido por ninguém; (d) a lógica de D62 deveria ir para `src/application/publish-outbox.ts`
+(achado 2), ao lado de `create-wallet.ts` e `submit-wager-transaction.ts`.
+
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
+| 1 | bloqueante | `src/interface/workers/outbox.worker.ts:14`, `src/main.ts:8` | Mesclada com a `main`, a branch não compila: importa `UNIT_OF_WORK` de `interface/http/http.module`, que o refactor `29e032b` removeu. O gate também recusa a branch porque ela não contém a `main`. É preciso rebase e adaptação (ver "Frente ao refactor" acima) | |
+| 2 | bloqueante | `src/interface/workers/outbox.worker.ts:119-148` | O ciclo de D62 (claim → publish → mark/retry) mora inteiro no worker de `interface`. ARQUITETURA §2.1 e §4 definem o use case `PublishOutbox` em `src/application/publish-outbox.ts` ("tick do worker · claim + 1 update por item"), e o worker só agenda e chama esse use case (D32). O código usa só portas (`UnitOfWork`, `EventPublisher`, `Clock`), então a mudança é mecânica. A escolha não está em "Decisões pendentes" | |
+| 3 | bloqueante | `src/main.ts:17-32`, `src/interface/workers/workers.module.ts` | `main.ts` monta o worker fora do DI (`new SqsEventPublisher`, `new OutboxWorker`) e liga `process.once('SIGTERM')` por conta própria. Isso fere D32 ("presos ao ciclo de vida do Nest") e §7.3, que manda os workers terminarem **antes** de fechar o MikroORM: o handler próprio corre em paralelo com o `app.close()` de `enableShutdownHooks()`, e o ORM pode fechar no meio do `markPublished`. Além disso, se o integrador aplicar o pedido da nota (registrar `WorkersModule`), o `onApplicationBootstrap` do provider também chama `start()`, e cada processo passa a ter **dois** workers. Registrar o `OutboxWorker` no `WageringModule` e apagar o bloco do `main.ts` resolve os dois problemas | |
+| 4 | importante | `test/integration/outbox-worker.test.ts:196-231` | I-16 pede "com `uow.before-commit`, nada sai". O teste confere que o outbox está vazio (isso já é o I-04) e que a fila de eventos está vazia, mas **nenhum worker roda** depois que o processo morre, e por isso a segunda asserção passa sempre. Falta um `worker.tick()` (ou a instância subir com o worker) antes de checar a fila, e checar que o tick devolveu 0. Hoje a asserção é mais fraca do que a do TESTES §4.2 | |
+| 5 | importante | `test/concurrency/outbox-worker.test.ts:122-162` | C-06 pede "duplicatas registradas, não falhas". O `Set` engole as duplicatas sem contá-las, e o laço para quando chega a 1000 ids distintos, de modo que as duplicatas que ainda estão na fila nunca são lidas. Falta contar as entregas totais e registrar (log ou asserção `>= 1000`) quantas foram duplicadas | |
+| 6 | importante | `src/interface/workers/outbox.worker.ts:100`, `:164`, `:175`, `:195` | Os quatro `catch {}` engolem o erro sem log nenhum. Com o banco fora ou a fila inexistente, o worker gira em silêncio, e só o lag denuncia o problema. ARQUITETURA §9 pede log estruturado: falta pelo menos um `warn` com `eventId`/código, sem payload | |
+| 7 | menor | `src/interface/workers/outbox.worker.ts:181-189` | `computeLag` chega a `computeLagSeconds` por cast (`as unknown as`), um método que não existe na porta `OutboxRepository` (congelada no M0). Com outro adaptador, o lag vira 0 sem aviso. Registrar em "Decisões pendentes": ou se estende a porta, ou se lê o lag por outro caminho | |
+| 8 | menor | `src/interface/workers/outbox.worker.ts:40` | `@Inject('CLOCK')` usa um token string que ninguém fornece, e o fallback `defaultClock` acaba sempre em uso. Depois do refactor, injetar `SystemClock` | |
+| 9 | menor | `test/integration/outbox-worker.test.ts:233-290` | O título diz "incrementa `wagering_retries_total`", mas nenhuma asserção lê a métrica. Ou se ajusta o título, ou se lê o contador no `metrics.registry` | |
+| 10 | menor | `test/concurrency/outbox-worker.test.ts:100`, `:254` | C-06 diz "2 instâncias só com o worker de outbox", mas as instâncias sobem com `ENABLE_HTTP=true` (usado para o readiness). Vale um comentário explicando por que, ou então esperar a prontidão de outro jeito | |
 
-Veredito: pendente
+Verificado e sem achado: escopo (os 9 arquivos batem com a lista da Abordagem); D20
+(`MessageGroupId = aggregateId`, `MessageDeduplicationId = eventId`, conferido no
+I-16); D62/restrição 4 (o claim roda num `uow.run` próprio, `publish` fica fora de
+transação, e `markPublished`/`scheduleRetry` rodam cada um no seu `uow.run`); D12 (o
+backoff vem de `OutboxMessage.scheduleRetry`, e o teste confere `attempts = 1` e
+`+2 s`); os pontos de falha `outbox.after-claim-before-publish` e
+`outbox.after-publish-before-mark` estão no lugar certo; C-06b prova que o lease foi
+empurrado e que B publica tudo depois que ele expira; o lag é calculado no SQL
+(`MIN(occurred_at) WHERE published_at IS NULL`, SCHEMA 4.6); não há dinheiro como
+`number` (o payload sai como `jsonb` serializado); nenhuma camada importa ORM nem AWS
+direto (o teste de arquitetura passa também na árvore mesclada); os testes usam
+banco e filas próprios.
+
+Veredito: mudanças necessárias
