@@ -106,7 +106,7 @@ export interface InboxRepository {
 
 export interface OutboxRepository {
   enqueue(messages: OutboxMessage[]): Promise<void>;
-  /** Reserva por lease com `SKIP LOCKED` (D18), em transação curta própria. */
+  /** Reserva por lease com `SKIP LOCKED` (D18, D62). Usa a transação recebida; o worker deve chamá-lo sozinho num `uow.run` curto. */
   claimDue(now: Date, limit: number, leaseMs: number): Promise<OutboxMessage[]>;
   markPublished(id: string, at: Date): Promise<void>;
   scheduleRetry(message: OutboxMessage): Promise<void>;

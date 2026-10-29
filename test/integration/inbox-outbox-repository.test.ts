@@ -2,12 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { ReflectMetadataProvider } from '@mikro-orm/decorators/legacy';
 import { defineConfig, MikroORM } from '@mikro-orm/postgresql';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  TransientInfrastructureError,
-  type TxRepositories,
-  type UnitOfWork,
-} from '../../src/application/ports';
-import { InvalidTransactionStateError } from '../../src/domain/errors';
+import type { InboxReceiveResult, TxRepositories, UnitOfWork } from '../../src/application/ports';
 import type { EventContext } from '../../src/domain/events/integration-event';
 import { WagerTransactionPendingReference } from '../../src/domain/events/wager-transaction-pending-reference';
 import { WagerTransactionProcessed } from '../../src/domain/events/wager-transaction-processed';
@@ -19,17 +14,30 @@ import { Money } from '../../src/domain/money';
 import { OutboxMessage } from '../../src/domain/outbox-message';
 import { WagerTransaction, WagerTransactionKind } from '../../src/domain/wager-transaction';
 import { Wallet } from '../../src/domain/wallet';
-import { MikroOrmInboxRepository } from '../../src/infrastructure/persistence/inbox-repository';
+import {
+  InboxMessageNotProcessedError,
+  MikroOrmInboxRepository,
+} from '../../src/infrastructure/persistence/inbox-repository';
 import { MikroOrmOutboxRepository } from '../../src/infrastructure/persistence/outbox-repository';
 import { InboxMessageRecord } from '../../src/infrastructure/persistence/records/inbox-message.record';
 import { OutboxMessageRecord } from '../../src/infrastructure/persistence/records/outbox-message.record';
 import { createTestDatabase, type TestDatabase } from '../support/database';
+import { eventually } from '../support/eventually';
 import { assertAllWalletsConsistent } from '../support/invariants';
 import { getTestInfraConfig } from '../support/preload';
 
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
 const CONSUMER = 'wager-transactions-consumer';
+
+async function caught(fn: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await fn();
+  } catch (error) {
+    return error;
+  }
+  throw new Error('esperava erro');
+}
 
 function makeEventContext(overrides: Partial<EventContext> = {}): EventContext {
   return {
@@ -64,7 +72,7 @@ function makeProcessedEvent(
   return WagerTransactionProcessed.from(tx, ctx);
 }
 
-describe('I-03: Repositórios e Records de Inbox e Outbox (SCHEMA 2.4, 2.5, 4.4, 4.5, 7; D7, D12, D18)', () => {
+describe('I-03: Repositórios e Records de Inbox e Outbox (SCHEMA 2.4, 2.5, 4.3, 4.4, 4.5, 7; D7, D12, D18, D25, D62)', () => {
   let db: TestDatabase;
   let orm: MikroORM;
   let inboxRepo: MikroOrmInboxRepository;
@@ -88,13 +96,13 @@ describe('I-03: Repositórios e Records de Inbox e Outbox (SCHEMA 2.4, 2.5, 4.4,
         forceUtcTimezone: true,
       }),
     );
-
-    inboxRepo = new MikroOrmInboxRepository(orm.em);
-    outboxRepo = new MikroOrmOutboxRepository(orm.em);
   });
 
   beforeEach(async () => {
     await db.reset();
+    const em = orm.em.fork();
+    inboxRepo = new MikroOrmInboxRepository(em);
+    outboxRepo = new MikroOrmOutboxRepository(em);
   });
 
   afterEach(async () => {
@@ -223,7 +231,144 @@ describe('I-03: Repositórios e Records de Inbox e Outbox (SCHEMA 2.4, 2.5, 4.4,
       expect(resOther).toEqual({ accepted: true });
     });
 
-    test('markProcessed grava processed_at e valida estado/existência da mensagem', async () => {
+    test('corrida de SCHEMA 4.3: duas transações concorrentes com o mesmo messageId — a 2ª aguarda a 1ª e recebe accepted:false (hash da 1ª) no commit ou accepted:true no rollback', async () => {
+      const t1 = new Date('2026-10-28T13:05:00.000Z');
+      const t2 = new Date('2026-10-28T13:05:01.000Z');
+
+      // 1. Primeira transação faz COMMIT -> segunda recebe accepted:false com o hash da primeira
+      let markTx1Inserted!: () => void;
+      const tx1Inserted = new Promise<void>((resolve) => {
+        markTx1Inserted = resolve;
+      });
+      let releaseTx1Commit!: () => void;
+      const tx1MayCommit = new Promise<void>((resolve) => {
+        releaseTx1Commit = resolve;
+      });
+
+      const tx1CommitPromise = orm.em.fork().transactional(async (txEm1) => {
+        const repo1 = new MikroOrmInboxRepository(txEm1);
+        const res = await repo1.tryReceive(
+          InboxMessage.receive({
+            consumerName: CONSUMER,
+            messageId: 'race-commit-msg',
+            payloadHash: HASH_A,
+            at: t1,
+          }),
+        );
+        expect(res).toEqual({ accepted: true });
+        markTx1Inserted();
+        await tx1MayCommit;
+      });
+
+      await tx1Inserted;
+
+      let tx2CommitFinished = false;
+      const tx2CommitPromise: Promise<InboxReceiveResult> = orm.em
+        .fork()
+        .transactional(async (txEm2) => {
+          const repo2 = new MikroOrmInboxRepository(txEm2);
+          const res = await repo2.tryReceive(
+            InboxMessage.receive({
+              consumerName: CONSUMER,
+              messageId: 'race-commit-msg',
+              payloadHash: HASH_B,
+              at: t2,
+            }),
+          );
+          tx2CommitFinished = true;
+          return res;
+        });
+
+      // Aguarda até o Postgres registrar a 2ª transação bloqueada no lock da 1ª (sem sleep)
+      await eventually(async () => {
+        const waiting = await db.sql<Array<{ count: number }>>`
+          SELECT COUNT(*)::int AS count
+            FROM pg_stat_activity
+           WHERE datname = ${db.name}
+             AND wait_event_type = 'Lock'
+             AND state = 'active'
+        `;
+        expect(waiting[0]?.count).toBe(1);
+      });
+      expect(tx2CommitFinished).toBe(false);
+
+      releaseTx1Commit();
+      await tx1CommitPromise;
+      const resAfterCommit = await tx2CommitPromise;
+
+      expect(resAfterCommit).toEqual({ accepted: false, storedPayloadHash: HASH_A });
+
+      // 2. Primeira transação faz ROLLBACK -> segunda é desbloqueada e recebe accepted:true
+      let markTx1RollbackInserted!: () => void;
+      const tx1RollbackInserted = new Promise<void>((resolve) => {
+        markTx1RollbackInserted = resolve;
+      });
+      let releaseTx1Rollback!: () => void;
+      const tx1MayRollback = new Promise<void>((resolve) => {
+        releaseTx1Rollback = resolve;
+      });
+
+      const tx1RollbackPromise = caught(() =>
+        orm.em.fork().transactional(async (txEm1) => {
+          const repo1 = new MikroOrmInboxRepository(txEm1);
+          const res = await repo1.tryReceive(
+            InboxMessage.receive({
+              consumerName: CONSUMER,
+              messageId: 'race-rollback-msg',
+              payloadHash: HASH_A,
+              at: t1,
+            }),
+          );
+          expect(res).toEqual({ accepted: true });
+          markTx1RollbackInserted();
+          await tx1MayRollback;
+          throw new Error('rollback da 1ª transação');
+        }),
+      );
+
+      await tx1RollbackInserted;
+
+      let tx2RollbackFinished = false;
+      const tx2RollbackPromise: Promise<InboxReceiveResult> = orm.em
+        .fork()
+        .transactional(async (txEm2) => {
+          const repo2 = new MikroOrmInboxRepository(txEm2);
+          const res = await repo2.tryReceive(
+            InboxMessage.receive({
+              consumerName: CONSUMER,
+              messageId: 'race-rollback-msg',
+              payloadHash: HASH_B,
+              at: t2,
+            }),
+          );
+          tx2RollbackFinished = true;
+          return res;
+        });
+
+      await eventually(async () => {
+        const waiting = await db.sql<Array<{ count: number }>>`
+          SELECT COUNT(*)::int AS count
+            FROM pg_stat_activity
+           WHERE datname = ${db.name}
+             AND wait_event_type = 'Lock'
+             AND state = 'active'
+        `;
+        expect(waiting[0]?.count).toBe(1);
+      });
+      expect(tx2RollbackFinished).toBe(false);
+
+      releaseTx1Rollback();
+      const rollbackErr = await tx1RollbackPromise;
+      expect((rollbackErr as Error).message).toBe('rollback da 1ª transação');
+
+      const resAfterRollback = await tx2RollbackPromise;
+      expect(resAfterRollback).toEqual({ accepted: true });
+
+      const winnerInDb = await inboxRepo.findByKey(CONSUMER, 'race-rollback-msg');
+      expect(winnerInDb?.payloadHash).toBe(HASH_B);
+    });
+
+    test('markProcessed grava processed_at e valida estado/existência da mensagem com erro próprio da infraestrutura', async () => {
       const receivedAt = new Date('2026-10-28T13:10:00.000Z');
       const processedAt = new Date('2026-10-28T13:10:00.350Z');
 
@@ -236,8 +381,10 @@ describe('I-03: Repositórios e Records de Inbox e Outbox (SCHEMA 2.4, 2.5, 4.4,
 
       await inboxRepo.tryReceive(msg);
 
-      // Chamar markProcessed no repositório sem antes chamar msg.markProcessed(at) é erro de estado
-      await expect(inboxRepo.markProcessed(msg)).rejects.toBeInstanceOf(InvalidTransactionStateError);
+      // Chamar markProcessed no repositório sem antes chamar msg.markProcessed(at) lança erro de infraestrutura
+      await expect(inboxRepo.markProcessed(msg)).rejects.toBeInstanceOf(
+        InboxMessageNotProcessedError,
+      );
 
       msg.markProcessed(processedAt);
       await inboxRepo.markProcessed(msg);
@@ -509,7 +656,7 @@ describe('I-03: Repositórios e Records de Inbox e Outbox (SCHEMA 2.4, 2.5, 4.4,
       expect(claimedAfterRelease.map((m) => m.id)).toEqual([msg1.id]);
     });
 
-    test('markPublished e scheduleRetry atualizam o banco e lançam erro para id inexistente', async () => {
+    test('markPublished e scheduleRetry atualizam o banco (attempts = attempts + 1 com published_at IS NULL) e lançam erro para id inexistente ou já publicada', async () => {
       const occurredAt = new Date('2026-10-28T17:00:00.000Z');
       const msgSuccess = OutboxMessage.enqueue(
         makeProcessedEvent(makeEventContext({ occurredAt })),
@@ -532,7 +679,13 @@ describe('I-03: Repositórios e Records de Inbox e Outbox (SCHEMA 2.4, 2.5, 4.4,
       expect(loadedSuccess?.isPending()).toBe(false);
       expect(loadedSuccess?.publishedAt?.toISOString()).toBe(publishedAt.toISOString());
 
-      // 2. Falha em msgRetry -> scheduleRetry no domínio (attempts = 1, +2s) e persiste no banco
+      // scheduleRetry em mensagem já publicada (published_at IS NOT NULL) falha por WHERE published_at IS NULL
+      msgSuccess.scheduleRetry(publishedAt);
+      await expect(outboxRepo.scheduleRetry(msgSuccess)).rejects.toThrow(
+        /OutboxMessage pendente não encontrada para scheduleRetry/,
+      );
+
+      // 2. Falha em msgRetry -> scheduleRetry no domínio (attempts = 1, +2s) e persiste no banco via attempts = attempts + 1
       const retryBaseNow = new Date(occurredAt.getTime() + 500);
       msgRetry.scheduleRetry(retryBaseNow);
       await outboxRepo.scheduleRetry(msgRetry);
@@ -575,17 +728,17 @@ describe('I-03: Repositórios e Records de Inbox e Outbox (SCHEMA 2.4, 2.5, 4.4,
         nextAttemptAt: publishedAt,
       });
       await expect(outboxRepo.scheduleRetry(ghostOutbox)).rejects.toThrow(
-        /OutboxMessage não encontrada/,
+        /OutboxMessage pendente não encontrada/,
       );
     });
   });
 
-  describe('Integração com a porta UnitOfWork e tradução de erros transitórios (SCHEMA 5, EXECUCAO §6)', () => {
+  describe('Integração com a porta UnitOfWork e propagação de SQLSTATE (SCHEMA 5, EXECUCAO §6)', () => {
     test('inbox e outbox participam atomicamente da mesma transação via interface UnitOfWork (commit e rollback)', async () => {
       // Adaptador mínimo da interface UnitOfWork (EXECUCAO §6: T22 usa UnitOfWork só pela interface até o merge da T20)
       const uow: UnitOfWork = {
         async run<T>(work: (tx: TxRepositories) => Promise<T>): Promise<T> {
-          return orm.em.transactional(async (txEm) => {
+          return orm.em.fork().transactional(async (txEm) => {
             const txRepos = {
               inbox: new MikroOrmInboxRepository(txEm),
               outbox: new MikroOrmOutboxRepository(txEm),
@@ -643,7 +796,7 @@ describe('I-03: Repositórios e Records de Inbox e Outbox (SCHEMA 2.4, 2.5, 4.4,
       expect(await outboxRepo.findById(rolledBackOutbox.id)).toBeUndefined();
     });
 
-    test('lock_timeout (55P03) é traduzido em TransientInfrastructureError', async () => {
+    test('lock_timeout (55P03) sobe do driver sem alteração para tradução na UoW da T20', async () => {
       const now = new Date('2026-10-28T18:30:00.000Z');
       const outboxMsg = OutboxMessage.enqueue(
         makeProcessedEvent(makeEventContext({ occurredAt: now })),
@@ -655,13 +808,14 @@ describe('I-03: Repositórios e Records de Inbox e Outbox (SCHEMA 2.4, 2.5, 4.4,
       try {
         await lockConn`SELECT id FROM outbox_message WHERE id = ${outboxMsg.id} FOR UPDATE`;
 
-        await expect(
-          orm.em.transactional(async (txEm) => {
+        const lockErr = await caught(() =>
+          orm.em.fork().transactional(async (txEm) => {
             await txEm.execute(`SET LOCAL lock_timeout = '100ms'`);
             const txOutbox = new MikroOrmOutboxRepository(txEm);
             await txOutbox.markPublished(outboxMsg.id, now);
           }),
-        ).rejects.toBeInstanceOf(TransientInfrastructureError);
+        );
+        expect((lockErr as { code?: string }).code).toBe('55P03');
       } finally {
         await lockConn.unsafe('ROLLBACK');
       }
