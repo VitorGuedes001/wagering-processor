@@ -179,7 +179,7 @@ Testes:
 | C-07 | depende do consumidor da T40 | `skipIf` até T40 entrar, depois ativa (mesmo padrão da T32) |
 | eventos no outbox | T41 os publica | C-07/I-18/I-19 verificam o **outbox** (tabela), não a fila de eventos: não dependem da T41 |
 
-**Aprovação do humano:** pendente
+**Aprovação do humano:** aprovada em 2026-10-29 (na conversa): Abordagem aceita como proposta, com a Lista A (refactor 29e032b já na main, 71dbc44) e todas as decisões pendentes 0 a 7 resolvidas conforme as propostas da nota.
 
 ## Ordem de leitura do diff
 
