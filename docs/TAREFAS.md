@@ -35,7 +35,7 @@ a do worktree.
 | T41 Worker de outbox | 4 | G | T22, T33 | Entregue | t41-outbox-worker | C | notas/T41-outbox-worker.md |
 | T42 Worker de referências | 4 | C | T30, T33 | Entregue | t42-reference-worker | G | notas/T42-reference-worker.md |
 | T43 Extrato e reconciliação | 4 | G | T20, T31 | Entregue | t43-ledger-reconciliation | C | notas/T43-ledger-reconciliation.md |
-| T50 Cenários de falha | 5 | C | T32, T40, T41 | Proposta | t50-failure-scenarios | G | — |
+| T50 Cenários de falha | 5 | C | T32, T40, T41 | Entregue | t50-failure-scenarios | G | notas/T50-failure-scenarios.md |
 | T51 Entrega | 5 | H | T42, T43, T50 | Proposta | t51-entrega | C | — |
 
 A coluna Onda é o planejamento. As Deps dizem quando uma tarefa **pode**
