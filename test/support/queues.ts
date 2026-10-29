@@ -38,8 +38,18 @@ function isNonExistentQueueError(err: unknown): boolean {
 /**
  * Cria as 3 filas FIFO isoladas por arquivo de teste no LocalStack (TESTES D35, §3.2)
  * com os mesmos atributos e redrive policy de `docker/localstack/init-queues.sh`.
+ * `visibilityTimeoutSeconds` encurta a visibilidade da fila de entrada para os
+ * cenários de crash (C-05, C-08), sem mudar a redrive policy (T50, DP-1).
  */
-export async function createTestQueues(customPrefix?: string): Promise<TestQueues> {
+export interface CreateTestQueuesOptions {
+  /** Padrão 30, igual ao `init-queues.sh`. */
+  visibilityTimeoutSeconds?: number;
+}
+
+export async function createTestQueues(
+  customPrefix?: string,
+  options: CreateTestQueuesOptions = {},
+): Promise<TestQueues> {
   await checkInfrastructure();
 
   const rawPrefix = customPrefix ?? `t${randomUUID().replace(/-/g, '').slice(0, 10)}`;
@@ -92,14 +102,14 @@ export async function createTestQueues(customPrefix?: string): Promise<TestQueue
       throw new Error(`Não foi possível obter QueueArn da DLQ: ${dlqName}`);
     }
 
-    // 2. Fila de entrada com VisibilityTimeout=30 e RedrivePolicy maxReceiveCount=5
+    // 2. Fila de entrada com VisibilityTimeout (padrão 30) e RedrivePolicy maxReceiveCount=5
     const inputRes = await sqs.send(
       new CreateQueueCommand({
         QueueName: inputName,
         Attributes: {
           FifoQueue: 'true',
           ContentBasedDeduplication: 'true',
-          VisibilityTimeout: '30',
+          VisibilityTimeout: String(options.visibilityTimeoutSeconds ?? 30),
           RedrivePolicy: JSON.stringify({
             deadLetterTargetArn: dlqArn,
             maxReceiveCount: '5',
