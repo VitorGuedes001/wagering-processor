@@ -1,6 +1,6 @@
 # T31 — HTTP
 
-> Estado: Testada · Raia: G · Revisor: C · Branch: `t31-http`
+> Estado: Revisada · Raia: G · Revisor: C · Branch: `t31-http`
 
 ## O que muda
 
@@ -89,9 +89,33 @@ bun test test/integration/http-endpoints.test.ts
 
 ## Revisão cruzada
 
-Preenchido pelo agente da outra ferramenta.
+Revisão cruzada realizada pelo Revisor C (Reviewer T31) contra `AGENTS.md`, `docs/ARQUITETURA.md` §6 e §7, e `docs/TESTES.md` I-05..I-11.
+
+### 1. Resultado do Quality Gate (`bun run tarefa:gate`)
+- `typecheck`: ✔ aprovado (`bunx tsc --noEmit`)
+- `skills`: ✔ aprovado (`bun scripts/skills-sync.ts --check`)
+- `unidade`: ✔ 71 testes aprovados (`bun test ./test/unit`)
+- `arquitetura`: ✔ 5 testes aprovados (`bun test ./test/architecture`)
+- `integração`: ✔ 102 testes aprovados (`bun test ./test/integration`, incluindo os 26 testes de `http-endpoints.test.ts`)
+
+### 2. Verificações realizadas
+- **Escopo**: Apenas os 12 arquivos declarados na nota foram tocados (`src/interface/http/*`, `src/application/queries.ts`, `test/integration/http-endpoints.test.ts` e nota). Nenhum arquivo protegido foi alterado (`app.module.ts`, `package.json`, `bun.lock`, `ports.ts`, `src/domain/`).
+- **Restrição inviolável 5.1 (Dinheiro)**: Validação com Zod em `moneySchema` exige estritamente string no formato `(0|[1-9]\d*)\.\d{2}`. Qualquer payload com `amount` numérico é barrado na borda com status HTTP 400 e código `INVALID_PAYLOAD`.
+- **Contrato e Mapeamento HTTP (ARQUITETURA §6.2)**:
+  - `POST /wallets`: 201 com view `{ id, playerId, balance, version }`, ou 409 `WALLET_ALREADY_EXISTS`.
+  - `GET /wallets/:id`: 200 com carteira ou 404 `WALLET_NOT_FOUND`.
+  - `POST /wagering/transactions` e `/wagers/v1`: 200 para `PROCESSED`, 202 para `PENDING_REFERENCE`, 422 para `REJECTED` (com `failureCode` e `balance`), 409 para conflitos (`IDEMPOTENCY_CONFLICT` e `EXTERNAL_ID_CONFLICT`).
+  - Falhas transitórias mapeadas para 503 com cabeçalho `Retry-After: 1`.
+  - `Idempotency-Key`: obrigatório, validado até 256 caracteres, gerando 400 `INVALID_PAYLOAD` se ausente.
+  - `X-Correlation-Id`: capturado do header ou gerado em formato UUIDv7 via middleware e propagado na resposta HTTP.
+- **Autenticação (D31)**: `AuthGuard` no-op implementado sem acoplamento a bibliotecas externas.
+- **Testes de Integração (I-05 a I-11)**: Autênticos, executados com servidor HTTP real instanciado em porta efêmera e banco PostgreSQL isolado rodando migrations. Validação estrita de banco e invariantes (`assertAllWalletsConsistent`).
+- **Fronteiras de Camadas**: `src/interface/http/` desacoplado de MikroORM direto, consumindo use cases e queries através de portas e abstração `UnitOfWork`.
+
+### 3. Tabela de Achados
 
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
+| — | nenhuma | — | Nenhum achado impeditivo. Implementação robusta, aderente às restrições financeiras e aos contratos de arquitetura. | — |
 
-Veredito: pendente
+Veredito: aprovado
