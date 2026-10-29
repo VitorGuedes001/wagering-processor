@@ -111,3 +111,30 @@ O que verifiquei, sem achado:
 | 6 | menor | `test/unit/events.test.ts:268`, `:312`, `:389` | Os testes negativos cobrem só o status errado. Faltam casos para as outras guardas: `PROCESSED` sem `balanceAfter`, `REJECTED` sem `failureCode`, `OPENING` em `Rejected`/`PendingReference` e `PENDING_REFERENCE` sem `referenceExternalTransactionId`. | Resolvido em `test(t13): casos negativos das guardas de evento que não são de status`. Cobre `PROCESSED` sem `balanceAfter`/`processedAt`; `REJECTED` sem `failureCode`/`balanceAfter`, em `OPENING` ou sem campos de provedor; `PENDING_REFERENCE` sem `referenceExternalTransactionId`, em `OPENING` ou sem campos de provedor. |
 
 Veredito: aprovado com ressalvas. Não há bloqueante. O achado 1 tem que ser resolvido no merge da T11/T12 (ou antes, com o `catch` condicionado).
+
+### Revisão do retrabalho
+
+Revisor: Antigravity (raia G), 2026-10-28, sobre os commits `e3758d5..47ecf15` (branch `t13-inbox-outbox`).
+
+Gate (`bun run tarefa:gate`): verde. typecheck ✔, skills ✔, unidade ✔ (217 pass, 0 fail, 543 expects), arquitetura ✔ (1 pass), concorrência sem testes ainda.
+
+O que foi verificado nos 6 itens do retrabalho:
+
+1. **Resolução de cada linha da tabela anterior no código:**
+   - **Achado 1 (`e3758d5`) — resolvido:** `makeWallet`, `makeLedgerEntry` e `makeTransaction` em `test/unit/events.test.ts` chamam diretamente `Wallet.rehydrate`, `WalletLedgerEntry.rehydrate` e `WagerTransaction.rehydrate`. O caso `OPENING` usa `WagerTransaction.opening`, há teste com `Wallet.open` + `wallet.debit`, e `test/unit/inbox-outbox.test.ts` usa `WagerTransactionProcessed.from(WagerTransaction.opening(...), ctx)` no lugar de `DummyIntegrationEvent`.
+   - **Achado 2 (`6daf740`) — parcialmente resolvido (ver tabela abaixo):** `WagerTransactionProcessed.from` passou a exigir `providerId` e `externalTransactionId` quando `kind !== WagerTransactionKind.Opening`, mas não exige `roundId` nem `gameId`.
+   - **Achado 3 (`d57abc1`) — resolvido:** `WalletBalanceChanged.from` valida `entry.walletId !== wallet.id` lançando `InvalidTransactionStateError` (MODELAGEM 10.4), com teste negativo em `test/unit/events.test.ts:341-347`.
+   - **Achado 4 (`089a9d8`) — resolvido:** `OutboxMessage.scheduleRetry` removeu o atalho `this._attempts >= 6` e calcula `2 ** this._attempts * OUTBOX_BACKOFF_BASE_MS` limitado por `OUTBOX_BACKOFF_MAX_MS`, com caso de teste para `attempts = 2_000` (`Infinity` → 60 s) em `test/unit/inbox-outbox.test.ts:174-190`.
+   - **Achado 5 (`79f2486`) — resolvido:** `docs/MODELAGEM.md` alinhado no §7 (`enqueue(event)`) e na D12 (primeira retentativa em 2 s e teto de 60 s).
+   - **Achado 6 (`a80af80`) — resolvido (com a ressalva de `roundId`/`gameId` abaixo):** `test/unit/events.test.ts` adicionou casos negativos para `PROCESSED` sem `balanceAfter`/`processedAt`, `REJECTED` nas guardas não-status (com sanidade prévia do estado base) e `PENDING_REFERENCE` nas guardas não-status (com sanidade prévia do estado base).
+2. **Ausência de test doubles do domínio:** nenhum `Reflect.construct`, `Object.create`, `catch` ou subclasse fake nos testes (`test/unit/events.test.ts` e `test/unit/inbox-outbox.test.ts`); usam exclusivamente `Money.from`, `Wallet.open`/`rehydrate`, `WalletLedgerEntry.rehydrate` (e `create` via `Wallet.open`/`debit`) e `WagerTransaction.opening`/`rehydrate`.
+3. **Guardas de `WagerTransactionProcessed.from` (D42) e `WalletBalanceChanged.from`:** `WalletBalanceChanged.from` rejeita lançamento de outra wallet (`entry.walletId !== wallet.id`), mas `WagerTransactionProcessed.from` só exige `providerId` e `externalTransactionId` fora do `OPENING`, deixando `roundId` e `gameId` sem verificação (achado 1 abaixo).
+4. **Backoff do outbox (D12):** manteve `min(2^attempts × 1 s, 60 s)`, sem limite de tentativas, sem jitter e sem `Math.` (restrição 5.1 / A-03).
+5. **Escopo em `docs/MODELAGEM.md`:** `git diff main...t13-inbox-outbox -- docs/MODELAGEM.md` tocou exclusivamente a linha da D12 e o parágrafo de `OutboxMessage` no §7.
+6. **Contratos do M0 intactos:** `git diff main...t13-inbox-outbox -- src/domain` não alterou nenhuma assinatura pública, tipo exportado ou construtor congelado na T01.
+
+| # | Severidade | Arquivo:linha | Achado | Resolução |
+|---|---|---|---|---|
+| 1 | menor | `src/domain/events/wager-transaction-processed.ts:38-40`; `test/unit/events.test.ts:217-224` | Em `WagerTransactionProcessedData`, os quatro campos de provedor (`providerId`, `externalTransactionId`, `roundId` e `gameId`) são opcionais apenas por causa do `OPENING` (D42; em MODELAGEM 8 nenhum dos quatro tem `?`, e em SCHEMA 2.2 `wager_tx_provider_fields_ck` exige todos presentes quando `kind <> 'OPENING'`). Ao contrário de `Rejected` e `PendingReference` (cujos payloads não têm `roundId`/`gameId`), `WagerTransactionProcessed.from` serializa `roundId` e `gameId` (`wager-transaction-processed.ts:66-67`), mas `missingProviderFields` só verifica `providerId === undefined \|\| externalTransactionId === undefined`. Uma transação com `kind !== WagerTransactionKind.Opening` e `roundId === undefined` ou `gameId === undefined` passa sem lançar `InvalidTransactionStateError` e gera o evento sem essas chaves. Falta incluir `transaction.roundId === undefined \|\| transaction.gameId === undefined` na guarda e os dois casos negativos correspondentes em `test/unit/events.test.ts:217-224`. | |
+
+Veredito: aprovado com ressalvas
