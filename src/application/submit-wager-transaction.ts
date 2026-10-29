@@ -1,4 +1,4 @@
-import type { Clock, IdGenerator, UnitOfWork } from './ports';
+import type { Clock, IdGenerator, TxRepositories, UnitOfWork } from './ports';
 import { UniqueViolationError } from './ports';
 import type { InboxContext, SubmitOutcome, TransactionView, WagerCommand } from './contracts';
 import { Money } from '../domain/money';
@@ -7,7 +7,8 @@ import {
   type BackoffPolicy,
   WagerTransaction,
 } from '../domain/wager-transaction';
-import { decideWager } from '../domain/decide-wager';
+import { decideWager, type WagerDecision } from '../domain/decide-wager';
+import type { Wallet } from '../domain/wallet';
 import { InboxMessage } from '../domain/inbox-message';
 import { OutboxMessage } from '../domain/outbox-message';
 import { LedgerDirection } from '../domain/wallet-ledger-entry';
@@ -18,7 +19,7 @@ import { WalletBalanceChanged } from '../domain/events/wallet-balance-changed';
 
 export const DEFAULT_REFERENCE_BACKOFF: BackoffPolicy = {
   baseMs: 1_000,
-  maxMs: 60_000,
+  maxMs: 300_000, // D11: teto de 5 min
   maxAttempts: 10,
 };
 
@@ -29,6 +30,101 @@ function toTransactionView(transaction: WagerTransaction): TransactionView {
     balance: transaction.balanceAfter ? transaction.balanceAfter.toJSON() : undefined,
     ...(transaction.failureCode !== undefined ? { failureCode: transaction.failureCode } : {}),
   };
+}
+
+export interface ApplyWagerDecisionInput {
+  transaction: WagerTransaction;
+  /** Já travada com `FOR UPDATE` pelo chamador (D15). */
+  wallet: Wallet;
+  referenceTransactionId: string | undefined;
+  decision: WagerDecision;
+  now: Date;
+  backoff: BackoffPolicy;
+  correlationId: string;
+  causationId?: string;
+  /**
+   * `insert`: transação nova (submissão HTTP/SQS). `update`: transação que já
+   * existe em `PENDING_REFERENCE` (worker, T42), cujo `scheduleReferenceRetry`
+   * o chamador já fez antes de `decideWager` (D57).
+   */
+  persist: 'insert' | 'update';
+}
+
+/**
+ * Tabela de aplicação de MODELAGEM 5, dentro da transação SQL e com a wallet
+ * travada. Uma só para a submissão e o worker de referências ("o mesmo
+ * caminho"). `AWAIT_REFERENCE` com `update` é o retry do worker: grava só a
+ * transação, sem evento.
+ */
+export async function applyWagerDecision(
+  tx: TxRepositories,
+  idGenerator: IdGenerator,
+  input: ApplyWagerDecisionInput,
+): Promise<void> {
+  const { transaction, wallet, referenceTransactionId, decision, now, backoff, persist } = input;
+  const persistTransaction = (): Promise<void> =>
+    persist === 'insert' ? tx.transactions.insert(transaction) : tx.transactions.update(transaction);
+
+  const eventContext = {
+    eventId: idGenerator.next(),
+    correlationId: input.correlationId,
+    ...(input.causationId !== undefined ? { causationId: input.causationId } : {}),
+    occurredAt: now,
+  };
+
+  if (decision.type === 'AWAIT_REFERENCE') {
+    if (persist === 'update') {
+      await persistTransaction();
+      return;
+    }
+    transaction.markPendingReference(now, backoff);
+    await persistTransaction();
+
+    const event = WagerTransactionPendingReference.from(transaction, eventContext);
+    await tx.outbox.enqueue([OutboxMessage.enqueue(event)]);
+  } else if (decision.type === 'REJECT') {
+    transaction.reject(decision.code, wallet.balance, now);
+    await persistTransaction();
+
+    const event = WagerTransactionRejected.from(transaction, eventContext);
+    await tx.outbox.enqueue([OutboxMessage.enqueue(event)]);
+  } else {
+    // APPLY
+    if (decision.direction === undefined) {
+      // LOSS não move saldo nem cria lançamento no ledger
+      transaction.markProcessed(referenceTransactionId, wallet.balance, now);
+      await persistTransaction();
+
+      const event = WagerTransactionProcessed.from(transaction, eventContext);
+      await tx.outbox.enqueue([OutboxMessage.enqueue(event)]);
+    } else {
+      // CREDIT ou DEBIT
+      const expectedVersion = wallet.version;
+      const entryId = idGenerator.next();
+      const entry =
+        decision.direction === LedgerDirection.Debit
+          ? wallet.debit(transaction.money, transaction.id, entryId, now)
+          : wallet.credit(transaction.money, transaction.id, entryId, now);
+
+      transaction.markProcessed(referenceTransactionId, wallet.balance, now);
+      await persistTransaction();
+      await tx.ledger.insert(entry);
+      await tx.wallets.update(wallet, expectedVersion);
+
+      const processedEvent = WagerTransactionProcessed.from(transaction, eventContext);
+      const balanceChangedEvent = WalletBalanceChanged.from(wallet, entry, {
+        eventId: idGenerator.next(),
+        correlationId: input.correlationId,
+        ...(input.causationId !== undefined ? { causationId: input.causationId } : {}),
+        occurredAt: now,
+      });
+
+      await tx.outbox.enqueue([
+        OutboxMessage.enqueue(processedEvent),
+        OutboxMessage.enqueue(balanceChangedEvent),
+      ]);
+    }
+  }
 }
 
 export class SubmitWagerTransaction {
@@ -191,63 +287,18 @@ export class SubmitWagerTransaction {
           backoff: this.backoff,
         });
 
-        // 7. Aplicação da decisão
-        const eventContext = {
-          eventId: this.idGenerator.next(),
+        // 7. Aplicação da decisão (MODELAGEM 5, tabela de aplicação)
+        await applyWagerDecision(tx, this.idGenerator, {
+          transaction,
+          wallet,
+          referenceTransactionId: reference?.id,
+          decision,
+          now,
+          backoff: this.backoff,
           correlationId: command.correlationId,
           ...(command.causationId !== undefined ? { causationId: command.causationId } : {}),
-          occurredAt: now,
-        };
-
-        if (decision.type === 'AWAIT_REFERENCE') {
-          transaction.markPendingReference(now, this.backoff);
-          await tx.transactions.insert(transaction);
-
-          const event = WagerTransactionPendingReference.from(transaction, eventContext);
-          await tx.outbox.enqueue([OutboxMessage.enqueue(event)]);
-        } else if (decision.type === 'REJECT') {
-          transaction.reject(decision.code, wallet.balance, now);
-          await tx.transactions.insert(transaction);
-
-          const event = WagerTransactionRejected.from(transaction, eventContext);
-          await tx.outbox.enqueue([OutboxMessage.enqueue(event)]);
-        } else {
-          // APPLY
-          if (decision.direction === undefined) {
-            // LOSS não move saldo nem cria lançamento no ledger
-            transaction.markProcessed(reference?.id, wallet.balance, now);
-            await tx.transactions.insert(transaction);
-
-            const event = WagerTransactionProcessed.from(transaction, eventContext);
-            await tx.outbox.enqueue([OutboxMessage.enqueue(event)]);
-          } else {
-            // CREDIT ou DEBIT
-            const expectedVersion = wallet.version;
-            const entryId = this.idGenerator.next();
-            const entry =
-              decision.direction === LedgerDirection.Debit
-                ? wallet.debit(transaction.money, transaction.id, entryId, now)
-                : wallet.credit(transaction.money, transaction.id, entryId, now);
-
-            transaction.markProcessed(reference?.id, wallet.balance, now);
-            await tx.transactions.insert(transaction);
-            await tx.ledger.insert(entry);
-            await tx.wallets.update(wallet, expectedVersion);
-
-            const processedEvent = WagerTransactionProcessed.from(transaction, eventContext);
-            const balanceChangedEvent = WalletBalanceChanged.from(wallet, entry, {
-              eventId: this.idGenerator.next(),
-              correlationId: command.correlationId,
-              ...(command.causationId !== undefined ? { causationId: command.causationId } : {}),
-              occurredAt: now,
-            });
-
-            await tx.outbox.enqueue([
-              OutboxMessage.enqueue(processedEvent),
-              OutboxMessage.enqueue(balanceChangedEvent),
-            ]);
-          }
-        }
+          persist: 'insert',
+        });
 
         // 8. Se inboxContext, marca inbox como processada
         if (inboxMessage) {

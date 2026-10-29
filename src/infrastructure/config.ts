@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { BackoffPolicy } from '../domain/wager-transaction';
 
 const flag = z
   .enum(['true', 'false'])
@@ -39,6 +40,9 @@ const schema = z.object({
   REFERENCE_POLL_MS: positiveInt(1000),
   REFERENCE_MAX_ATTEMPTS: positiveInt(10),
   REFERENCE_BACKOFF_BASE_MS: positiveInt(1000),
+  REFERENCE_BACKOFF_MAX_MS: positiveInt(300_000),
+  REFERENCE_BATCH: positiveInt(50),
+  REFERENCE_LEASE_MS: positiveInt(30_000),
   SHUTDOWN_GRACE_MS: positiveInt(20_000),
 
   FAULT_POINT: z.string().min(1).optional(),
@@ -47,6 +51,15 @@ const schema = z.object({
 export type AppConfig = z.infer<typeof schema>;
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
+
+/** Política única de `PENDING_REFERENCE` para a submissão e o worker (D11, D43). */
+export function referenceBackoffFrom(config: AppConfig): BackoffPolicy {
+  return {
+    baseMs: config.REFERENCE_BACKOFF_BASE_MS,
+    maxMs: config.REFERENCE_BACKOFF_MAX_MS,
+    maxAttempts: config.REFERENCE_MAX_ATTEMPTS,
+  };
+}
 
 /** Lê e valida o ambiente uma vez. Valor inválido derruba o processo na largada. */
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {

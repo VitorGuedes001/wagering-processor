@@ -31,6 +31,9 @@ custo sem retorno.
 | D63 | O consumidor lê o `maxReceiveCount` da `RedrivePolicy` da própria fila, uma vez no boot. Sem política, nenhuma entrega é a última | A fila é a fonte da verdade. Uma env nova duplicaria o número e poderia divergir do script de criação das filas (T40, DP-2) |
 | D64 | `FAILED`/`PROCESSING_FAILED` só é gravado na última entrega, quando o comando é válido e o erro é transitório ou bug, num `uow.run` separado, sem evento no outbox e só se `(providerId, idempotencyKey)` ainda não existe (`RecordProcessingFailure`) | Nos casos permanentes não há transação identificável para gravar (payload inválido, mismatch, erro de domínio). Cumpre SCHEMA 4.4 sem inventar transação (T40, DP-3) |
 | D65 | `SubmitWagerTransaction` marca a inbox como processada em todo retorno dentro do `uow.run` que passou por ela, inclusive replay, conflitos e `WALLET_NOT_FOUND`. O retry por `23505` não regrava a inbox e fica como dívida | MODELAGEM 7: mensagem rejeitada por negócio também fica `processed` (T40, DP-4) |
+| D67 | A tabela de MODELAGEM 5 é aplicada por uma única função, `applyWagerDecision`, exportada de `submit-wager-transaction.ts` e usada pela submissão (`insert`) e pelo worker de referências (`update`) | MODELAGEM 5: HTTP, SQS e worker "chamam o mesmo caminho". Duplicar o trecho abriria divergência (T42, decisão 1) |
+| D68 | Uma só `BackoffPolicy` de referência, montada da config (`REFERENCE_BACKOFF_BASE_MS`, `REFERENCE_BACKOFF_MAX_MS`, `REFERENCE_MAX_ATTEMPTS`), serve a submissão e o worker. O teto padrão é 300 000 ms. O claim do worker usa `REFERENCE_BATCH` e `REFERENCE_LEASE_MS`, como o outbox | D11 fixa o teto em 5 min e D43 diz que a política vem de env. Com políticas diferentes, a primeira tentativa e as seguintes seguiriam regras distintas. SCHEMA 4.5 manda reservar "do mesmo jeito" que o outbox (T42, decisões 2 e 3) |
+| D69 | O worker de referências não alimenta `wagering_pending_reference_age_seconds` nem `wagering_lock_conflicts_total`. Falha transitória de item conta em `wagering_retries_total{component="reference_worker"}`. As duas métricas ficam como dívida | As duas exigem mudança em `ports.ts`, congelado: uma consulta nova e a distinção do SQLSTATE no erro transitório (T42, decisões 4 e 6) |
 
 ## 2. Camadas
 
@@ -391,7 +394,8 @@ contexto) e `HealthModule`. O domínio não é módulo: é código puro importad
 | `ENABLE_HTTP`, `ENABLE_CONSUMER`, `ENABLE_OUTBOX_WORKER`, `ENABLE_REFERENCE_WORKER` | `true` | isolar componentes em teste (D28) |
 | `SQS_CONSUMER_CONCURRENCY` | 5 | |
 | `OUTBOX_POLL_MS` / `OUTBOX_BATCH` / `OUTBOX_LEASE_MS` | 500 / 50 / 30000 | |
-| `REFERENCE_POLL_MS` / `REFERENCE_MAX_ATTEMPTS` / `REFERENCE_BACKOFF_BASE_MS` | 1000 / 10 / 1000 | D11 |
+| `REFERENCE_POLL_MS` / `REFERENCE_MAX_ATTEMPTS` / `REFERENCE_BACKOFF_BASE_MS` / `REFERENCE_BACKOFF_MAX_MS` | 1000 / 10 / 1000 / 300000 | D11. Uma política só para a submissão e o worker (D43) |
+| `REFERENCE_BATCH` / `REFERENCE_LEASE_MS` | 50 / 30000 | claim do worker de referências, como o do outbox (SCHEMA 4.5, D18) |
 | `SQS_INPUT_QUEUE` / `SQS_DLQ` / `SQS_EVENTS_QUEUE` | `wager-transactions.fifo` / `wager-transactions-dlq.fifo` / `wagering-events.fifo` | filas isoladas por teste ([TESTES.md](TESTES.md), D35) |
 | `DB_LOCK_TIMEOUT_MS` | 2000 | D21. Os testes com portão de lock sobem esse valor |
 | `FAULT_POINT` | — | só em teste ([TESTES.md](TESTES.md), D38) |

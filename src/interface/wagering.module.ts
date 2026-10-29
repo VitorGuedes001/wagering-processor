@@ -9,9 +9,13 @@ import { CreateWallet } from '../application/create-wallet';
 import type { Clock, IdGenerator, UnitOfWork } from '../application/ports';
 import { ApplicationTransactionQueries, ApplicationWalletQueries } from '../application/queries';
 import { RecordProcessingFailure } from '../application/record-processing-failure';
-import { SubmitWagerTransaction } from '../application/submit-wager-transaction';
+import { ResolvePendingReferences } from '../application/resolve-pending-references';
+import {
+  DEFAULT_REFERENCE_BACKOFF,
+  SubmitWagerTransaction,
+} from '../application/submit-wager-transaction';
 import { SystemClock } from '../infrastructure/clock';
-import { APP_CONFIG, loadConfig } from '../infrastructure/config';
+import { APP_CONFIG, type AppConfig, loadConfig, referenceBackoffFrom } from '../infrastructure/config';
 import { RandomUuidGenerator } from '../infrastructure/id-generator';
 import { SqsInputQueue } from '../infrastructure/messaging/sqs-input-queue';
 import { ObservabilityModule } from '../infrastructure/observability/observability.module';
@@ -24,6 +28,10 @@ import { MetricsController } from './http/metrics.controller';
 import { WageringController } from './http/wagering.controller';
 import { WalletsController } from './http/wallets.controller';
 import { WagerTransactionConsumer } from './sqs/wager-transaction.consumer';
+import { PendingReferenceWorker } from './workers/pending-reference.worker';
+
+/** Sem `APP_CONFIG` (módulo montado sozinho em teste), vale o default de D11. */
+const OPTIONAL_CONFIG = { token: APP_CONFIG, optional: true };
 
 const WAGERING_PROVIDERS: Provider[] = [
   AuthGuard,
@@ -39,9 +47,14 @@ const WAGERING_PROVIDERS: Provider[] = [
   },
   {
     provide: SubmitWagerTransaction,
-    inject: [UNIT_OF_WORK, SystemClock, RandomUuidGenerator],
-    useFactory: (uow: UnitOfWork, clock: Clock, ids: IdGenerator) =>
-      new SubmitWagerTransaction(uow, clock, ids),
+    inject: [UNIT_OF_WORK, SystemClock, RandomUuidGenerator, OPTIONAL_CONFIG],
+    useFactory: (uow: UnitOfWork, clock: Clock, ids: IdGenerator, config?: AppConfig) =>
+      new SubmitWagerTransaction(
+        uow,
+        clock,
+        ids,
+        config ? referenceBackoffFrom(config) : DEFAULT_REFERENCE_BACKOFF,
+      ),
   },
   {
     provide: RecordProcessingFailure,
@@ -51,6 +64,18 @@ const WAGERING_PROVIDERS: Provider[] = [
   },
   // Só consome se ENABLE_CONSUMER (D28); depende do SqsInputQueue do MessagingModule.
   WagerTransactionConsumer,
+  {
+    provide: ResolvePendingReferences,
+    inject: [UNIT_OF_WORK, SystemClock, RandomUuidGenerator, OPTIONAL_CONFIG],
+    useFactory: (uow: UnitOfWork, clock: Clock, ids: IdGenerator, config?: AppConfig) =>
+      new ResolvePendingReferences(uow, clock, ids, {
+        batch: config?.REFERENCE_BATCH ?? 50,
+        leaseMs: config?.REFERENCE_LEASE_MS ?? 30_000,
+        backoff: config ? referenceBackoffFrom(config) : DEFAULT_REFERENCE_BACKOFF,
+      }),
+  },
+  // Só roda se ENABLE_REFERENCE_WORKER (D28).
+  PendingReferenceWorker,
   {
     provide: ApplicationWalletQueries,
     inject: [UNIT_OF_WORK],
@@ -64,8 +89,9 @@ const WAGERING_PROVIDERS: Provider[] = [
 ];
 
 /**
- * Controllers, use cases e consumidor SQS (ARQUITETURA §11). O `UNIT_OF_WORK` vem do
- * `PersistenceModule`; `withUnitOfWork` liga uma instância pronta (testes).
+ * Controllers, use cases, consumidor SQS e worker de referências (ARQUITETURA §11).
+ * O `UNIT_OF_WORK` vem do `PersistenceModule`; `withUnitOfWork` liga uma instância
+ * pronta (testes).
  */
 @Module({
   imports: [ObservabilityModule],
@@ -74,8 +100,9 @@ const WAGERING_PROVIDERS: Provider[] = [
 })
 export class WageringModule implements NestModule {
   /**
-   * Só HTTP, com uma UoW pronta (testes em processo). Sem fila: o consumidor
-   * recebe `ENABLE_CONSUMER=false` (D28) e nenhum adaptador SQS. A config não lê
+   * Só HTTP, com uma UoW pronta (testes em processo). Sem fila nem worker: o
+   * consumidor recebe `ENABLE_CONSUMER=false` e o worker de referências
+   * `ENABLE_REFERENCE_WORKER=false` (D28), e nenhum adaptador SQS. A config não lê
    * `process.env`, então nunca aponta para as filas padrão (TESTES D35).
    */
   static withUnitOfWork(uow: UnitOfWork): DynamicModule {
@@ -83,7 +110,10 @@ export class WageringModule implements NestModule {
       module: WageringModule,
       providers: [
         { provide: UNIT_OF_WORK, useValue: uow },
-        { provide: APP_CONFIG, useValue: loadConfig({ ENABLE_CONSUMER: 'false' }) },
+        {
+          provide: APP_CONFIG,
+          useValue: loadConfig({ ENABLE_CONSUMER: 'false', ENABLE_REFERENCE_WORKER: 'false' }),
+        },
         { provide: SqsInputQueue, useValue: null },
       ],
     };
