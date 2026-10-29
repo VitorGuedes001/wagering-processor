@@ -2,6 +2,7 @@ import { MikroORM } from '@mikro-orm/postgresql';
 import { Global, Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig, loadConfig } from './infrastructure/config';
 import { MessagingModule } from './infrastructure/messaging/messaging.module';
+import { ObservabilityModule } from './infrastructure/observability/observability.module';
 import { MikroOrmInboxRepository } from './infrastructure/persistence/inbox-repository';
 import { MikroOrmLedgerRepository } from './infrastructure/persistence/ledger-repository';
 import { MikroOrmOutboxRepository } from './infrastructure/persistence/outbox-repository';
@@ -11,6 +12,7 @@ import { MikroOrmWagerTransactionRepository } from './infrastructure/persistence
 import { MikroOrmWalletRepository } from './infrastructure/persistence/wallet-repository';
 import { HealthModule } from './interface/health/health.module';
 import { HttpModule, UNIT_OF_WORK } from './interface/http/http.module';
+import { MetricsModule } from './interface/http/metrics.module';
 
 @Global()
 @Module({
@@ -34,6 +36,14 @@ import { HttpModule, UNIT_OF_WORK } from './interface/http/http.module';
 class ConfigModule {}
 
 @Module({
-  imports: [ConfigModule, PersistenceModule, MessagingModule, HealthModule, HttpModule],
+  imports: [
+    ConfigModule,
+    PersistenceModule,
+    MessagingModule,
+    ObservabilityModule,
+    HealthModule,
+    HttpModule,
+    MetricsModule,
+  ],
 })
 export class AppModule {}
