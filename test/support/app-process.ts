@@ -86,7 +86,7 @@ export async function spawnApp(options: AppProcessOptions = {}): Promise<AppProc
     rejectPort = rej;
   });
 
-  // Leitura de stdout para capturar linha JSON de listening e coletar logs
+  // Leitura de stdout para capturar linha JSON de listening ou ready e coletar logs
   (async () => {
     const reader = proc.stdout.getReader();
     const decoder = new TextDecoder();
@@ -108,6 +108,9 @@ export async function spawnApp(options: AppProcessOptions = {}): Promise<AppProc
               if (parsed.msg === 'listening' && typeof parsed.port === 'number' && parsed.port > 0) {
                 capturedPort = parsed.port;
                 resolvePort(parsed.port);
+              } else if (parsed.msg === 'ready') {
+                capturedPort = 0;
+                resolvePort(0);
               }
             } catch {
               // ignora linhas que não são JSON
@@ -149,28 +152,30 @@ export async function spawnApp(options: AppProcessOptions = {}): Promise<AppProc
     }),
   ]);
 
-  const url = `http://127.0.0.1:${port}`;
+  const url = port > 0 ? `http://127.0.0.1:${port}` : '';
 
-  // Aguarda /health/ready responder 200
-  try {
-    await eventually(
-      async () => {
-        const res = await fetch(`${url}/health/ready`);
-        if (res.status !== 200) {
-          throw new Error(`health/ready retornou ${res.status}`);
-        }
-      },
-      { timeoutMs: 15_000, intervalMs: 50 },
-    );
-  } catch (err) {
+  // Aguarda /health/ready responder 200 quando HTTP está ativo
+  if (port > 0) {
     try {
-      proc.kill('SIGKILL');
-    } catch {
-      // ignora
+      await eventually(
+        async () => {
+          const res = await fetch(`${url}/health/ready`);
+          if (res.status !== 200) {
+            throw new Error(`health/ready retornou ${res.status}`);
+          }
+        },
+        { timeoutMs: 15_000, intervalMs: 50 },
+      );
+    } catch (err) {
+      try {
+        proc.kill('SIGKILL');
+      } catch {
+        // ignora
+      }
+      throw new Error(
+        `Aplicação não respondeu 200 em /health/ready dentro do timeout:\n${logsList.join('\n')}\nCausa: ${err}`,
+      );
     }
-    throw new Error(
-      `Aplicação não respondeu 200 em /health/ready dentro do timeout:\n${logsList.join('\n')}\nCausa: ${err}`,
-    );
   }
 
   const appInstance: AppProcess = {

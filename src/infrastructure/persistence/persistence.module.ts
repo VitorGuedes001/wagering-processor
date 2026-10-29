@@ -5,6 +5,7 @@ import { APP_CONFIG, type AppConfig } from '../config';
 import { MikroOrmInboxRepository } from './inbox-repository';
 import { MikroOrmLedgerRepository } from './ledger-repository';
 import ormConfig from './mikro-orm.config';
+import { OutboxLagProbe } from './outbox-lag-probe';
 import { MikroOrmOutboxRepository } from './outbox-repository';
 import { MikroOrmUnitOfWork } from './unit-of-work';
 import { MikroOrmWagerTransactionRepository } from './wager-transaction-repository';
@@ -29,7 +30,8 @@ export const UNIT_OF_WORK = Symbol('UNIT_OF_WORK');
           outbox: (em) => new MikroOrmOutboxRepository(em),
         }),
     },
+    OutboxLagProbe,
   ],
-  exports: [UNIT_OF_WORK],
+  exports: [UNIT_OF_WORK, OutboxLagProbe],
 })
 export class PersistenceModule {}
