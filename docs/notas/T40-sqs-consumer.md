@@ -294,7 +294,21 @@ Mudanças em arquivos de alto conflito (`app.module.ts`, config do ORM,
 
 Preenchido pelo agente da outra ferramenta.
 
+Revisor: Antigravity, 29/10/2026, sobre `f9f8fd8` (base `71dbc44`).
+
+**Gate.** `bun run tarefa:gate` executado no worktree `wp-T40`: 100% verde (typecheck, skills, unidade, arquitetura, integração [inclui I-12 a I-15], concorrência).
+
+O que verifiquei sem achado:
+- **Escopo:** Exatamente os 11 arquivos listados na Abordagem (variante com refactor `29e032b`). Nenhum arquivo protegido foi tocado.
+- **Camadas e arquitetura:** `src/domain/` e `src/application/` permanecem desacoplados de Nest, ORM e AWS. O único ponto que toca o AWS SDK é o adaptador `SqsInputQueue` em `src/infrastructure/messaging/sqs-input-queue.ts`. O consumidor em `src/interface/sqs/` consome apenas abstrações e contratos limpos.
+- **Dinheiro (restrição 5.1):** `amount` preservado estritamente como string. O teste de integração I-11 via SQS prova que `amount` numérico é rejeitado pelo schema Zod do envelope e encaminhado para a DLQ sem efeito colateral financeiro.
+- **Concorrência e transacionalidade (CHALLENGE §10, ARQUITETURA §7.2, restrição 4):** Ack (`DeleteMessage`) emitido estritamente após o commit da transação financeira. Redrive para DLQ operado pelo SQS (`maxReceiveCount = 5`) sem envio manual. Grupos de mensagens (`MessageGroupId`) processados em sequência dentro do lote e em paralelo entre grupos distintos.
+- **Idempotência e inbox (D7, D24):** Duplicatas de `messageId` com payload idêntico são processadas com ack e sem re-execução financeira (I-13); divergência de payload gera log `error` e encaminhamento à DLQ sem segundo débito (I-14).
+- **Decisões:** DP-1 a DP-5 documentadas com rigor e alinhadas ao enunciado e arquitetura.
+
 | # | Severidade | Arquivo:linha | Achado | Resolução |
 |---|---|---|---|---|
 
-Veredito: pendente
+(Nenhum achado bloqueante, importante ou menor a apontar.)
+
+Veredito: aprovado
