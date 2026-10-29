@@ -31,6 +31,7 @@ import { MetricsController } from './http/metrics.controller';
 import { WageringController } from './http/wagering.controller';
 import { WalletsController } from './http/wallets.controller';
 import { WagerTransactionConsumer } from './sqs/wager-transaction.consumer';
+import { OutboxLagProbe } from '../infrastructure/persistence/outbox-lag-probe';
 import { OutboxWorker } from './workers/outbox.worker';
 import { PendingReferenceWorker } from './workers/pending-reference.worker';
 
@@ -136,6 +137,8 @@ export class WageringModule implements NestModule {
         },
         { provide: SqsInputQueue, useValue: null },
         { provide: EVENT_PUBLISHER, useValue: { publish: async () => {} } },
+        // Sem MikroORM aqui; o worker de outbox está desligado e nunca lê o lag.
+        { provide: OutboxLagProbe, useValue: { lagSeconds: async () => 0 } },
       ],
     };
   }

@@ -12,6 +12,7 @@ import { APP_CONFIG, type AppConfig } from '../../infrastructure/config';
 import { FaultInjector, FaultPoint } from '../../infrastructure/fault-injector';
 import { AppLogger } from '../../infrastructure/observability/logger';
 import { MetricsRegistry } from '../../infrastructure/observability/metrics';
+import { OutboxLagProbe } from '../../infrastructure/persistence/outbox-lag-probe';
 
 /**
  * Worker de publicação transacional de outbox (CHALLENGE §6.5, §11; ARQUITETURA §7.3; D18, D20, D32, D62).
@@ -31,6 +32,7 @@ export class OutboxWorker
     private readonly publishOutbox: PublishOutbox,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly metrics: MetricsRegistry,
+    private readonly lagProbe: OutboxLagProbe,
     @Optional() private readonly logger: AppLogger = new AppLogger(),
     @Optional() private readonly clock: SystemClock = new SystemClock(),
   ) {}
@@ -172,12 +174,11 @@ export class OutboxWorker
   }
 
   /**
-   * Lag de outbox (SCHEMA 4.6; ARQUITETURA §9).
-   * Sem método na porta OutboxRepository (congelada no M0), o worker não realiza downcast
-   * (Decisão pendente DP-1 na nota da tarefa). Retorna 0.
+   * Lag de outbox: `now - min(occurred_at) WHERE published_at IS NULL` (SCHEMA 4.6;
+   * ARQUITETURA §9). Lido pelo `OutboxLagProbe`, fora da porta congelada (D74).
    */
-  async computeLag(_now: Date = this.clock.now()): Promise<number> {
-    return 0;
+  async computeLag(now: Date = this.clock.now()): Promise<number> {
+    return this.lagProbe.lagSeconds(now);
   }
 
   async updateLag(now: Date = this.clock.now()): Promise<void> {

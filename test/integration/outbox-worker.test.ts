@@ -27,6 +27,7 @@ import { WalletRecord } from '../../src/infrastructure/persistence/records/walle
 import { MikroOrmUnitOfWork } from '../../src/infrastructure/persistence/unit-of-work';
 import { MikroOrmWagerTransactionRepository } from '../../src/infrastructure/persistence/wager-transaction-repository';
 import { MikroOrmWalletRepository } from '../../src/infrastructure/persistence/wallet-repository';
+import { OutboxLagProbe } from '../../src/infrastructure/persistence/outbox-lag-probe';
 import { OutboxWorker } from '../../src/interface/workers/outbox.worker';
 import { createTestDatabase, type TestDatabase } from '../support/database';
 import { buildPostgresUrl } from '../support/preload';
@@ -104,7 +105,7 @@ describe('I-16: Outbox Worker Integration (TESTES §4.2; ARQUITETURA §7.3; D18,
 
     const publisher = new SqsEventPublisher(queues.sqs, config);
     const publishOutbox = new PublishOutbox(uow, publisher, new SystemClock());
-    const worker = new OutboxWorker(publishOutbox, config, metrics);
+    const worker = new OutboxWorker(publishOutbox, config, metrics, new OutboxLagProbe(orm));
 
     const walletId = randomUUID();
     const eventId = randomUUID();
@@ -135,6 +136,10 @@ describe('I-16: Outbox Worker Integration (TESTES §4.2; ARQUITETURA §7.3; D18,
       SELECT published_at FROM outbox_message WHERE id = ${eventId}
     `;
     expect(pendingRow?.published_at).toBeNull();
+
+    // Com o evento pendente, o lag é a idade do mais antigo (SCHEMA 4.6)
+    const pendingLag = await worker.computeLag(new Date(now.getTime() + 5_000));
+    expect(pendingLag).toBeCloseTo(5, 1);
 
     // 2. Executa um tick do worker
     const published = await worker.tick(now);
@@ -227,7 +232,7 @@ describe('I-16: Outbox Worker Integration (TESTES §4.2; ARQUITETURA §7.3; D18,
     } as any;
     const publisher = new SqsEventPublisher(queues.sqs, config);
     const publishOutbox = new PublishOutbox(uow, publisher, new SystemClock());
-    const worker = new OutboxWorker(publishOutbox, config, metrics);
+    const worker = new OutboxWorker(publishOutbox, config, metrics, new OutboxLagProbe(orm));
 
     const published = await worker.tick();
     expect(published).toBe(0);
@@ -267,7 +272,7 @@ describe('I-16: Outbox Worker Integration (TESTES §4.2; ARQUITETURA §7.3; D18,
     };
 
     const publishOutbox = new PublishOutbox(uow, failingPublisher, new SystemClock());
-    const worker = new OutboxWorker(publishOutbox, config, metrics);
+    const worker = new OutboxWorker(publishOutbox, config, metrics, new OutboxLagProbe(orm));
 
     const eventId = randomUUID();
     const occurredAt = new Date(Date.now() - 5000); // 5 segundos atrás
