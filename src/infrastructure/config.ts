@@ -52,7 +52,7 @@ export type AppConfig = z.infer<typeof schema>;
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
 
-/** Política única de `PENDING_REFERENCE` para a submissão e o worker (D11, D43). */
+/** Política única de `PENDING_REFERENCE` para a submissão e o worker. */
 export function referenceBackoffFrom(config: AppConfig): BackoffPolicy {
   return {
     baseMs: config.REFERENCE_BACKOFF_BASE_MS,

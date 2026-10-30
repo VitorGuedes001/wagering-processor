@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { IdGenerator } from '../application/ports';
 
-/** Ids de entidades e eventos (ARQUITETURA §3). */
+/** Ids de entidades e eventos. */
 export class RandomUuidGenerator implements IdGenerator {
   next(): string {
     return randomUUID();
   }
 }
 
-/** Gera UUIDv7 padrão RFC 9562 (ARQUITETURA §6.1). */
+/** Gera UUIDv7 padrão RFC 9562. */
 export function generateUuidV7(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);

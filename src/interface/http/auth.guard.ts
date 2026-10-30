@@ -2,7 +2,7 @@ import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/com
 import type { HttpRequest } from './types';
 
 /**
- * Ponto de extensão no-op para autenticação (CHALLENGE §2, ARQUITETURA §10, D31).
+ * Ponto de extensão no-op para autenticação.
  * Anexa um chamador sem `providerId`. Com um IdP, validaria o JWT pelo JWKS e
  * preencheria `providerId` com o `azp` do token.
  */

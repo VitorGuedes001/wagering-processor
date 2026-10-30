@@ -1,6 +1,6 @@
 /**
  * O que o use case fornece para montar um evento. O `eventId` vem daqui porque o
- * domínio não gera id (D44): quem emite dois eventos chama o `IdGenerator` duas vezes.
+ * domínio não gera id: quem emite dois eventos chama o `IdGenerator` duas vezes.
  */
 export interface EventContext {
   eventId: string;
@@ -32,7 +32,7 @@ export interface IntegrationEventJson<T> {
 }
 
 /**
- * Envelope de evento de integração (CHALLENGE §11). Cada evento é uma subclasse
+ * Envelope de evento de integração. Cada evento é uma subclasse
  * concreta: `eventType` e `version` vivem no tipo, nunca numa string no call site.
  * `data` carrega `MoneyProps` e datas ISO, nunca `Money` nem `Date`.
  */

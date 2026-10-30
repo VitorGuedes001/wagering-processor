@@ -23,7 +23,7 @@ function routeOf(req: RoutedRequest): string {
 
 /**
  * `wagering_http_requests_total` e `wagering_http_request_duration_seconds` por
- * método, rota e status (ARQUITETURA 9). Mede no `finish`, depois do filtro de
+ * método, rota e status. Mede no `finish`, depois do filtro de
  * erros, então o status é o que o cliente recebeu.
  */
 @Injectable()

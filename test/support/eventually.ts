@@ -4,7 +4,7 @@ export interface EventuallyOptions {
 }
 
 /**
- * Polling curto até `fn` parar de lançar erro ou estourar `timeoutMs` (TESTES D39).
+ * Polling curto até `fn` parar de lançar erro ou estourar `timeoutMs`.
  * Substitui `sleep` em testes assíncronos e de concorrência.
  */
 export async function eventually<T>(

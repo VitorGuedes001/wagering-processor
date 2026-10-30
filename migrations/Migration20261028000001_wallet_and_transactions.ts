@@ -1,9 +1,9 @@
 import { Migration } from '@mikro-orm/migrations';
 
 /**
- * `wallet` e `wager_transaction` (SCHEMA 2.1 e 2.2), com os triggers delas que não
- * dependem do ledger (SCHEMA 3). Os nomes de constraint e índice são contrato:
- * a infraestrutura traduz violação por nome (SCHEMA 5, `UniqueConstraint`).
+ * `wallet` e `wager_transaction`, com os triggers delas que não
+ * dependem do ledger. Os nomes de constraint e índice são contrato:
+ * a infraestrutura traduz violação por nome (`UniqueConstraint`).
  *
  * Erro de trigger: SQLSTATE 23000 com `CONSTRAINT = <nome do trigger>` (nota T14).
  */
@@ -80,11 +80,11 @@ export class Migration20261028000001_wallet_and_transactions extends Migration {
       )
     `);
 
-    // D4: idempotência por provedor
+    // idempotência por provedor
     this.addSql(`CREATE UNIQUE INDEX wager_tx_idempotency_uq ON wager_transaction (provider_id, idempotency_key)`);
-    // §7.2, rota GET /providers/:providerId/... e busca de referência
+    // rota GET /providers/:providerId/... e busca de referência
     this.addSql(`CREATE UNIQUE INDEX wager_tx_external_uq ON wager_transaction (provider_id, external_transaction_id)`);
-    // D1: no máximo uma reversão aplicada por referência
+    // no máximo uma reversão aplicada por referência
     this.addSql(`
       CREATE UNIQUE INDEX wager_tx_single_reversal_uq ON wager_transaction (reference_transaction_id)
         WHERE kind IN ('REFUND','ROLLBACK') AND status = 'PROCESSED'
@@ -140,7 +140,7 @@ export class Migration20261028000001_wallet_and_transactions extends Migration {
         FOR EACH ROW EXECUTE FUNCTION wallet_no_delete_fn()
     `);
 
-    // MODELAGEM 4: terminal congela a linha; PENDING_REFERENCE só vai para ela mesma
+    // terminal congela a linha; PENDING_REFERENCE só vai para ela mesma
     // ou terminal. Mutáveis: só o que markProcessed/reject/fail/scheduleReferenceRetry mexem.
     this.addSql(`
       CREATE FUNCTION wager_tx_guard_fn() RETURNS trigger LANGUAGE plpgsql AS $$

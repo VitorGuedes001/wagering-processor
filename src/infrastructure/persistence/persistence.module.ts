@@ -11,7 +11,7 @@ import { MikroOrmUnitOfWork } from './unit-of-work';
 import { MikroOrmWagerTransactionRepository } from './wager-transaction-repository';
 import { MikroOrmWalletRepository } from './wallet-repository';
 
-/** Token da porta `UnitOfWork` (ARQUITETURA §3). */
+/** Token da porta `UnitOfWork`. */
 export const UNIT_OF_WORK = Symbol('UNIT_OF_WORK');
 
 @Global()

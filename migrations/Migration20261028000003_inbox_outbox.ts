@@ -1,8 +1,8 @@
 import { Migration } from '@mikro-orm/migrations';
 
 /**
- * `inbox_message` e `outbox_message` (SCHEMA 2.4 e 2.5). O inbox deduplica a fila
- * pela PK; o outbox é a fila de publicação com lease em `next_attempt_at` (D18).
+ * `inbox_message` e `outbox_message`. O inbox deduplica a fila
+ * pela PK; o outbox é a fila de publicação com lease em `next_attempt_at`.
  */
 export class Migration20261028000003_inbox_outbox extends Migration {
   override async up(): Promise<void> {

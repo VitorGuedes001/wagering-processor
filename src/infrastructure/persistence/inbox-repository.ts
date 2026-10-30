@@ -17,18 +17,18 @@ export class InboxMessageNotProcessedError extends Error {
 }
 
 /**
- * Repositório MikroORM de `inbox_message` (SCHEMA 2.4, 4.4; ARQUITETURA 3, 5; D7, D25).
- * Recebe apenas o `EntityManager` da transação corrente via `RepositoryFactories` do `UnitOfWork` (D25).
+ * Repositório MikroORM de `inbox_message`.
+ * Recebe apenas o `EntityManager` da transação corrente via `RepositoryFactories` do `UnitOfWork`.
  * Erros do driver sobem sem tradução local para serem traduzidos na borda do `MikroOrmUnitOfWork`.
  */
 export class MikroOrmInboxRepository implements InboxRepository {
   constructor(private readonly em: EntityManager) {}
 
   /**
-   * `INSERT … ON CONFLICT DO NOTHING` (SCHEMA 4.4).
+   * `INSERT … ON CONFLICT DO NOTHING`.
    * Se a chave `(consumer_name, message_id)` já existia, consulta e devolve o
    * `payload_hash` gravado para o use case distinguir duplicata idêntica de
-   * divergência de payload (D7).
+   * divergência de payload.
    */
   async tryReceive(message: InboxMessage): Promise<InboxReceiveResult> {
     const inserted = await this.em.execute<Array<{ message_id: string }>>(
@@ -72,7 +72,7 @@ export class MikroOrmInboxRepository implements InboxRepository {
 
   /**
    * Marca a mensagem da inbox como processada na mesma transação SQL do efeito
-   * financeiro (SCHEMA 4.4). Exige que `message.markProcessed(at)` já tenha sido
+   * financeiro. Exige que `message.markProcessed(at)` já tenha sido
    * invocado na entidade de domínio.
    */
   async markProcessed(message: InboxMessage): Promise<void> {

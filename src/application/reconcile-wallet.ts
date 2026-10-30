@@ -3,8 +3,8 @@ import { reconcile } from '../domain/reconcile';
 import type { ReconciliationView } from './contracts';
 
 /**
- * Reconcilia o saldo da wallet contra o histórico imutável do ledger (MODELAGEM §11).
- * Executa sob snapshot isolado REPEATABLE READ READ ONLY (D22), sem travar a wallet.
+ * Reconcilia o saldo da wallet contra o histórico imutável do ledger.
+ * Executa sob snapshot isolado REPEATABLE READ READ ONLY, sem travar a wallet.
  */
 export class ReconcileWallet {
   constructor(private readonly uow: UnitOfWork) {}

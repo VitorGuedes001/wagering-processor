@@ -203,7 +203,7 @@ describe('I-03: Repositórios e Records de Inbox e Outbox (SCHEMA 2.4, 2.5, 4.3,
       const res2 = await inboxRepo.tryReceive(duplicateSameHash);
       expect(res2).toEqual({ accepted: false, storedPayloadHash: HASH_A });
 
-      // Redelivery com mesmo messageId e payloadHash diferente (D7)
+      // Redelivery com mesmo messageId e payloadHash diferente
       const duplicateDifferentHash = InboxMessage.receive({
         consumerName: CONSUMER,
         messageId: 'sqs-msg-001',
@@ -517,7 +517,7 @@ describe('I-03: Repositórios e Records de Inbox e Outbox (SCHEMA 2.4, 2.5, 4.3,
         expect(loaded!.payload).toEqual(original.payload);
       }
 
-      // Verificação explícita da restrição 5.1 nos payloads lidos do jsonb
+      // Verificação explícita de que dinheiro é string nos payloads lidos do jsonb
       const loadedProcessed = (await outboxRepo.findById(processedEvt.eventId))!;
       const processedData = loadedProcessed.payload.data as Record<string, unknown>;
       const processedMoney = processedData.money as { amount: unknown; currency: unknown };

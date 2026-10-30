@@ -9,7 +9,7 @@ import { SQL } from 'bun';
 
 export const WORKTREE_ROOT = resolve(import.meta.dir, '../..');
 export const WORKTREE_HASH = createHash('sha256').update(WORKTREE_ROOT).digest('hex').slice(0, 8);
-/** Nome do banco template isolado por worktree (TESTES D34, D60). */
+/** Nome do banco template, isolado por checkout. */
 export const TEMPLATE_DB_NAME = `wagering_template_${WORKTREE_HASH}`;
 export const MIGRATIONS_DIR = resolve(WORKTREE_ROOT, 'migrations');
 
@@ -89,7 +89,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 let infraCheckedPromise: Promise<void> | undefined;
 
 /**
- * Verifica se PostgreSQL e LocalStack SQS respondem (TESTES §2).
+ * Verifica se PostgreSQL e LocalStack SQS respondem.
  * Se não responderem, falha imediatamente com a instrução `bun run infra:up`.
  */
 export async function checkInfrastructure(): Promise<void> {
@@ -146,8 +146,8 @@ export async function checkInfrastructure(): Promise<void> {
 let templatePromise: Promise<void> | undefined;
 
 /**
- * Cria/atualiza o banco `wagering_template_<hash>` do worktree atual uma vez por processo
- * (TESTES D34, D60, §3.1). Aplica as migrations e fecha todas as conexões no template
+ * Cria/atualiza o banco `wagering_template_<hash>` do checkout atual uma vez por processo
+ * Aplica as migrations e fecha todas as conexões no template
  * para permitir `CREATE DATABASE ... TEMPLATE wagering_template_<hash>`.
  */
 export async function ensureTemplateDatabase(): Promise<void> {

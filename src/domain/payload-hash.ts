@@ -3,7 +3,7 @@ import type { MoneyProps } from './money';
 import type { SubmittableKind } from './wager-transaction';
 
 /**
- * Campos de negócio que entram no hash (MODELAGEM 9.1). Ficam de fora: o header,
+ * Campos de negócio que entram no hash. Ficam de fora: o header,
  * `idempotencyKey`, `messageId`, `type` e `occurredAt` do envelope SQS. Assim
  * HTTP e SQS geram o mesmo hash para a mesma operação.
  */

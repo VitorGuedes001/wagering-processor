@@ -16,7 +16,7 @@ export interface WagerTransactionPendingReferenceData {
   referenceExternalTransactionId: string;
 }
 
-/** Referência ausente na primeira tentativa. Não se repete a cada retry do worker (MODELAGEM 5). */
+/** Referência ausente na primeira tentativa. Não se repete a cada retry do worker. */
 export class WagerTransactionPendingReference extends IntegrationEvent<WagerTransactionPendingReferenceData> {
   readonly eventType = 'WagerTransactionPendingReference';
   readonly version = 1;

@@ -17,10 +17,10 @@ import { runWithRequestContext } from '../../infrastructure/observability/reques
 const COMPONENT = 'reference_worker';
 
 /**
- * Laço do worker de `PENDING_REFERENCE` (D32): `setTimeout` preso ao ciclo de
- * vida do Nest, ligado por `ENABLE_REFERENCE_WORKER` (D28). Nenhum estado de
- * correção fica aqui (restrição 8): a reserva é o lease no banco, e um item
- * que falha volta sozinho quando o lease vence (D18).
+ * Laço do worker de `PENDING_REFERENCE`: `setTimeout` preso ao ciclo de
+ * vida do Nest, ligado por `ENABLE_REFERENCE_WORKER`. Nenhum estado de
+ * correção fica aqui: a reserva é o lease no banco, e um item
+ * que falha volta sozinho quando o lease vence.
  */
 @Injectable()
 export class PendingReferenceWorker implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -41,7 +41,7 @@ export class PendingReferenceWorker implements OnApplicationBootstrap, OnApplica
     this.schedule(0);
   }
 
-  /** Para de agendar e espera o ciclo atual (ARQUITETURA 7.3, passo 4). */
+  /** Para de agendar e espera o ciclo atual. */
   async onApplicationShutdown(): Promise<void> {
     this.stopped = true;
     if (this.timer !== undefined) clearTimeout(this.timer);

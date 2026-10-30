@@ -1,11 +1,11 @@
 import { Entity, PrimaryKey, Property } from '@mikro-orm/decorators/legacy';
 
 /**
- * Record de persistência da tabela `wager_transaction` (SCHEMA §2.2, §7).
- * Separado da entidade de domínio `WagerTransaction` (CHALLENGE §6.1, ARQUITETURA §2.1).
+ * Record de persistência da tabela `wager_transaction`.
+ * Separado da entidade de domínio `WagerTransaction`.
  *
  * Campos monetários (`amount`, `balanceAfter`) são mantidos como `string`
- * (restrição 5.1, ARQUITETURA §8) e convertidos no repositório via `Money.fromPersistence`.
+ * e convertidos no repositório via `Money.fromPersistence`.
  */
 @Entity({ tableName: 'wager_transaction' })
 export class WagerTransactionRecord {

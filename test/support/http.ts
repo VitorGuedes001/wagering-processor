@@ -57,7 +57,7 @@ export async function createWallet(
 
 /**
  * Envia uma requisição HTTP POST de transação (`POST /wagering/transactions`).
- * Inclui obrigatoriamente o header `Idempotency-Key` (ARQUITETURA 6.1).
+ * Inclui obrigatoriamente o header `Idempotency-Key`.
  */
 export async function postTransaction(
   target: string | AppCluster,

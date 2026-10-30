@@ -7,10 +7,10 @@ import { APP_CONFIG, type AppConfig } from '../config';
 export const EVENT_PUBLISHER = Symbol('EVENT_PUBLISHER');
 
 /**
- * Publicador de eventos de domínio no SQS FIFO (CHALLENGE §6.5, §11; ARQUITETURA §7.1; D20).
- * Executa SEMPRE FORA de transação do banco (restrição 4, D62).
+ * Publicador de eventos de domínio no SQS FIFO.
+ * Executa SEMPRE FORA de transação do banco.
  * Fila de destino: `SQS_EVENTS_QUEUE` (`wagering-events.fifo` por padrão).
- * Atributos: `MessageGroupId = aggregateId` e `MessageDeduplicationId = eventId` (D20).
+ * Atributos: `MessageGroupId = aggregateId` e `MessageDeduplicationId = eventId`.
  */
 @Injectable()
 export class SqsEventPublisher implements EventPublisher {

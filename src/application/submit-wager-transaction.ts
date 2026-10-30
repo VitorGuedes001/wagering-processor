@@ -19,7 +19,7 @@ import { WalletBalanceChanged } from '../domain/events/wallet-balance-changed';
 
 export const DEFAULT_REFERENCE_BACKOFF: BackoffPolicy = {
   baseMs: 1_000,
-  maxMs: 300_000, // D11: teto de 5 min
+  maxMs: 300_000, // teto de 5 min
   maxAttempts: 10,
 };
 
@@ -34,7 +34,7 @@ function toTransactionView(transaction: WagerTransaction): TransactionView {
 
 export interface ApplyWagerDecisionInput {
   transaction: WagerTransaction;
-  /** Já travada com `FOR UPDATE` pelo chamador (D15). */
+  /** Já travada com `FOR UPDATE` pelo chamador. */
   wallet: Wallet;
   referenceTransactionId: string | undefined;
   decision: WagerDecision;
@@ -45,13 +45,13 @@ export interface ApplyWagerDecisionInput {
   /**
    * `insert`: transação nova (submissão HTTP/SQS). `update`: transação que já
    * existe em `PENDING_REFERENCE` (worker de referências), cujo `scheduleReferenceRetry`
-   * o chamador já fez antes de `decideWager` (D57).
+   * o chamador já fez antes de `decideWager`.
    */
   persist: 'insert' | 'update';
 }
 
 /**
- * Tabela de aplicação de MODELAGEM 5, dentro da transação SQL e com a wallet
+ * Aplica a decisão de `decideWager` dentro da transação SQL e com a wallet
  * travada. Uma só para a submissão e o worker de referências ("o mesmo
  * caminho"). `AWAIT_REFERENCE` com `update` é o retry do worker: grava só a
  * transação, sem evento.
@@ -152,7 +152,7 @@ export class SubmitWagerTransaction {
     const receivedAt = this.clock.now();
     const transactionId = this.idGenerator.next();
 
-    // 1. Valida a forma do comando antes da transação (MODELAGEM 4.2, SCHEMA 4.2 passo 1).
+    // 1. Valida a forma do comando antes da transação.
     WagerTransaction.create({
       id: transactionId,
       providerId: command.providerId,
@@ -180,7 +180,7 @@ export class SubmitWagerTransaction {
 
     try {
       return await this.uow.run(async (tx) => {
-        // 1. Inbox check (quando via SQS — SCHEMA 4.4)
+        // 1. Inbox check (quando via SQS)
         if (inboxMessage) {
           const inboxResult = await tx.inbox.tryReceive(inboxMessage);
           if (!inboxResult.accepted) {
@@ -192,7 +192,7 @@ export class SubmitWagerTransaction {
         }
 
         // Desfecho que retorna antes do fim também encerra a mensagem: o processamento
-        // terminou e o resultado está na transação (MODELAGEM 7, SCHEMA 4.4).
+        // terminou e o resultado está na transação.
         const closeInbox = async (outcome: SubmitOutcome): Promise<SubmitOutcome> => {
           if (inboxMessage) {
             inboxMessage.markProcessed(this.clock.now());
@@ -201,7 +201,7 @@ export class SubmitWagerTransaction {
           return outcome;
         };
 
-        // 2. Atalho para replays antes do lock da wallet (SCHEMA 4.2 passo 2: busca apenas idempotency_key)
+        // 2. Atalho para replays antes do lock da wallet (busca apenas idempotency_key)
         const fastTx = await tx.transactions.findByIdempotencyKey(
           command.providerId,
           command.idempotencyKey,
@@ -217,13 +217,13 @@ export class SubmitWagerTransaction {
           return closeInbox({ type: 'IDEMPOTENCY_CONFLICT' });
         }
 
-        // 3. SELECT ... FOR UPDATE na wallet (D15, SCHEMA 4.2 passo 3)
+        // 3. SELECT ... FOR UPDATE na wallet
         const wallet = await tx.wallets.lockById(command.walletId);
         if (!wallet) {
           return closeInbox({ type: 'WALLET_NOT_FOUND' });
         }
 
-        // 4. Re-checagem sob o lock da wallet (SCHEMA 4.2 passo 4)
+        // 4. Re-checagem sob o lock da wallet
         const lockedTx = await tx.transactions.findByIdempotencyKey(
           command.providerId,
           command.idempotencyKey,
@@ -247,7 +247,7 @@ export class SubmitWagerTransaction {
           return closeInbox({ type: 'EXTERNAL_ID_CONFLICT' });
         }
 
-        // 5. Busca referência e verifica se já foi revertida (SCHEMA 4.2 passo 5)
+        // 5. Busca referência e verifica se já foi revertida
         let reference: WagerTransaction | undefined;
         let referenceAlreadyReversed = false;
         if (command.referenceExternalTransactionId !== undefined) {
@@ -278,7 +278,7 @@ export class SubmitWagerTransaction {
           at: now,
         });
 
-        // 6. Decisão pura de negócio (MODELAGEM 5)
+        // 6. Decisão pura de negócio
         const decision = decideWager({
           transaction,
           wallet,
@@ -287,7 +287,7 @@ export class SubmitWagerTransaction {
           backoff: this.backoff,
         });
 
-        // 7. Aplicação da decisão (MODELAGEM 5, tabela de aplicação)
+        // 7. Aplicação da decisão
         await applyWagerDecision(tx, this.idGenerator, {
           transaction,
           wallet,

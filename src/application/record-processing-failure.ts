@@ -10,14 +10,14 @@ export type RecordProcessingFailureResult = 'RECORDED' | 'ALREADY_EXISTS' | 'SKI
 
 /**
  * Grava `FAILED`/`PROCESSING_FAILED` para uma mensagem na última entrega antes
- * da DLQ (SCHEMA 4.4, MODELAGEM 10.1, D64):
+ * da DLQ:
  *
  * - transação própria, porque a financeira já deu rollback;
  * - só quando o comando é válido e a falha foi transitória ou bug;
  * - não grava se a `(providerId, idempotencyKey)` ou o id externo já existem,
  *   nem se a wallet não existe ou tem outra moeda (a transação não teria onde
  *   ficar). Assim o provedor que reenviar recebe replay `FAILED`;
- * - sem evento no outbox: MODELAGEM 8 não define evento para `FAILED`.
+ * - sem evento no outbox: nenhum dos eventos mínimos cobre `FAILED`.
  *
  * O HTTP nunca chama este use case: lá a falha transitória é 503.
  */

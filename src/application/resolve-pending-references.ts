@@ -12,9 +12,9 @@ import {
 export interface ReferenceWorkerSettings {
   /** Itens por claim. */
   batch: number;
-  /** Lease do claim (D18): quanto tempo a linha fica reservada para esta instância. */
+  /** Lease do claim: quanto tempo a linha fica reservada para esta instância. */
   leaseMs: number;
-  /** A mesma política da submissão (D11, D43). */
+  /** A mesma política da submissão. */
   backoff: BackoffPolicy;
 }
 
@@ -22,14 +22,14 @@ export type ResolveOutcome =
   | { type: 'PROCESSED'; transactionId: string; kind: WagerTransactionKind }
   | { type: 'REJECTED'; transactionId: string; kind: WagerTransactionKind; failureCode: FailureCode }
   | { type: 'STILL_PENDING'; transactionId: string; kind: WagerTransactionKind; attempts: number }
-  /** Já saiu de `PENDING_REFERENCE`: outro worker resolveu, ou o lease venceu (SCHEMA 4.5). */
+  /** Já saiu de `PENDING_REFERENCE`: outro worker resolveu, ou o lease venceu. */
   | { type: 'SKIPPED'; transactionId: string };
 
 /**
- * Worker de `PENDING_REFERENCE` (ARQUITETURA 4, SCHEMA 4.5): uma transação
- * curta de claim por lease com `SKIP LOCKED` (D18) e, depois, uma transação por
+ * Worker de `PENDING_REFERENCE`: uma transação
+ * curta de claim por lease com `SKIP LOCKED` e, depois, uma transação por
  * item. Sem métricas nem logger: `application` não importa `infrastructure`
- * (ARQUITETURA 2). Quem instrumenta é o worker, a partir de `ResolveOutcome`.
+ *. Quem instrumenta é o worker, a partir de `ResolveOutcome`.
  */
 export class ResolvePendingReferences {
   constructor(
@@ -51,9 +51,9 @@ export class ResolvePendingReferences {
   }
 
   /**
-   * Uma tentativa de resolver a referência, na ordem de locks de SCHEMA 4.3
+   * Uma tentativa de resolver a referência, na ordem de locks do caminho de submissão
    * (wallet → transação pendente). O retry é contado **antes** de `decideWager`
-   * (D57), então a tentativa que leva `attempts` a `maxAttempts` já rejeita.
+   *, então a tentativa que leva `attempts` a `maxAttempts` já rejeita.
    */
   resolve(transactionId: string): Promise<ResolveOutcome> {
     const { backoff } = this.settings;
@@ -71,7 +71,7 @@ export class ResolvePendingReferences {
         throw new Error(`Wallet ${snapshot.walletId} da transação ${transactionId} não existe`);
       }
 
-      // Relê sob lock: protege contra dois workers e contra lease vencido (SCHEMA 4.5).
+      // Relê sob lock: protege contra dois workers e contra lease vencido.
       const pending = await tx.transactions.lockById(transactionId);
       if (!pending || pending.status !== WagerTransactionStatus.PendingReference) {
         return { type: 'SKIPPED', transactionId };
@@ -108,7 +108,7 @@ export class ResolvePendingReferences {
         now,
         backoff,
         // Decisão pendente 5 (aprovada): sem requisição de origem, a correlação
-        // é a própria transação e a causa é a idempotency key (MODELAGEM 8).
+        // é a própria transação e a causa é a idempotency key.
         correlationId: pending.id,
         ...(pending.idempotencyKey !== undefined ? { causationId: pending.idempotencyKey } : {}),
         persist: 'update',

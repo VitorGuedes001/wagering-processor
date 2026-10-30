@@ -20,7 +20,7 @@ export interface WagerTransactionRejectedData {
   balanceAfter: MoneyProps;
 }
 
-/** Rejeição por regra de negócio, inclusive referência que não chegou a tempo (§11, §7.1). */
+/** Rejeição por regra de negócio, inclusive referência que não chegou a tempo. */
 export class WagerTransactionRejected extends IntegrationEvent<WagerTransactionRejectedData> {
   readonly eventType = 'WagerTransactionRejected';
   readonly version = 1;

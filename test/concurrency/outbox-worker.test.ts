@@ -118,7 +118,7 @@ describe('C-06 e C-06b: Concorrência e Tolerância a Falhas no Outbox Worker (T
         { timeoutMs: 30000, intervalMs: 250 },
       );
 
-      // Drena a fila do SQS e contabiliza entregas e duplicatas (TESTES §4)
+      // Drena a fila do SQS e contabiliza entregas e duplicatas
       const receivedEventIds = new Set<string>();
       const duplicateEventIds = new Set<string>();
       let totalDeliveries = 0;
@@ -170,7 +170,7 @@ describe('C-06 e C-06b: Concorrência e Tolerância a Falhas no Outbox Worker (T
         expect(receivedEventIds.has(expectedId)).toBe(true);
       }
 
-      // Registra e valida contagem de duplicatas (TESTES §4: duplicatas registradas, não falhas)
+      // Registra e valida contagem de duplicatas (registradas, não falhas)
       console.log(
         JSON.stringify({
           msg: 'C-06 estatísticas de entrega SQS',

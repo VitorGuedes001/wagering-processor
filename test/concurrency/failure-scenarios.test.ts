@@ -15,11 +15,11 @@ import {
   type TestQueues,
 } from '../support/queues';
 
-// Visibilidade curta: a redelivery depois de um crash chega em segundos (D75).
+// Visibilidade curta: a redelivery depois de um crash chega em segundos.
 const VISIBILITY_SECONDS = 3;
 
 /**
- * Cenários de falha com processos reais (TESTES §4.3; CHALLENGE §13.5 e §13.8).
+ * Cenários de falha com processos reais.
  * Cada teste tem banco e filas próprios: um crash não deixa mensagem em voo para o outro.
  */
 describe('C-05 e C-08: crash depois do commit e crash com carga (TESTES §4.3)', () => {
@@ -72,7 +72,7 @@ describe('C-05 e C-08: crash depois do commit e crash com carga (TESTES §4.3)',
           ENABLE_REFERENCE_WORKER: 'false',
         };
 
-        // B só serve HTTP enquanto A vive: assim só A pode receber a mensagem (D76).
+        // B só serve HTTP enquanto A vive: assim só A pode receber a mensagem.
         const httpOnly = await start({ ...base, ENABLE_CONSUMER: 'false' });
         const { walletId, playerId } = await openWallet(httpOnly, '1000.00');
 
@@ -156,7 +156,7 @@ describe('C-05 e C-08: crash depois do commit e crash com carga (TESTES §4.3)',
           Array.from({ length: WALLETS }, () => openWallet(live[0]!, '1000.00')),
         );
 
-        // Carga por SQS: BET, WIN e LOSS alternados, MessageGroupId = walletId (ARQUITETURA 7).
+        // Carga por SQS: BET, WIN e LOSS alternados, MessageGroupId = walletId.
         const sqsWagers: WagerRequestFixture[] = Array.from({ length: SQS_MESSAGES }, (_, i) => {
           const { walletId, playerId } = wallets[i % WALLETS]!;
           const builders = [aBet, aWin, aLoss] as const;
@@ -202,7 +202,7 @@ describe('C-05 e C-08: crash depois do commit e crash com carga (TESTES §4.3)',
         await Promise.all(victims.map((app) => app.kill('SIGKILL')));
         live = [survivor!];
         // Mensagens em voo nas mortas voltam quando a visibilidade expira; o
-        // outbox reservado por elas volta quando o lease vence (D18).
+        // outbox reservado por elas volta quando o lease vence.
         live = [survivor!, ...(await Promise.all([start(options), start(options)]))];
 
         await producing;

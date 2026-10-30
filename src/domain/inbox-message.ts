@@ -1,7 +1,7 @@
 export interface ReceiveInboxProps {
   messageId: string;
   consumerName: string;
-  /** Hash de negócio do comando (`payloadHash`), para detectar mesmo `messageId` com payload diferente (D7). */
+  /** Hash de negócio do comando (`payloadHash`), para detectar mesmo `messageId` com payload diferente. */
   payloadHash: string;
   at: Date;
 }
@@ -16,7 +16,7 @@ export interface InboxMessageState {
 
 /**
  * Registro de deduplicação do consumidor, chave `(consumerName, messageId)`.
- * Gravado na mesma transação SQL do processamento (§6.5). Rejeição de negócio
+ * Gravado na mesma transação SQL do processamento. Rejeição de negócio
  * também fica `processed`: o desfecho está na transação.
  */
 export class InboxMessage {

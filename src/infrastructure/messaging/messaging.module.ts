@@ -32,7 +32,7 @@ import { SqsInputQueue } from './sqs-input-queue';
 export class MessagingModule implements OnApplicationShutdown {
   constructor(@Inject(SQSClient) private readonly sqs: SQSClient) {}
 
-  /** ARQUITETURA 7.3 passo 5. Roda depois do `beforeApplicationShutdown` do consumidor. */
+  /** Último passo do desligamento. Roda depois do `beforeApplicationShutdown` do consumidor. */
   onApplicationShutdown(): void {
     this.sqs.destroy();
   }

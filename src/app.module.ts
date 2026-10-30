@@ -6,7 +6,7 @@ import { PersistenceModule } from './infrastructure/persistence/persistence.modu
 import { HealthModule } from './interface/health/health.module';
 import { WageringModule } from './interface/wagering.module';
 
-/** Composição dos módulos de ARQUITETURA §11. */
+/** Composição dos módulos da aplicação. */
 @Module({
   imports: [
     ConfigModule,

@@ -2,7 +2,7 @@ import { TransientInfrastructureError, UniqueViolationError, type UniqueConstrai
 
 /**
  * `UPDATE wallet … WHERE version = $esperada` sem linha afetada. Sob o lock da
- * wallet isso não acontece por corrida (SCHEMA 4.1), então é bug e não é transitório.
+ * wallet isso não acontece por corrida, então é bug e não é transitório.
  */
 export class StaleWalletVersionError extends Error {
   constructor(walletId: string, expectedVersion: number) {
@@ -23,7 +23,7 @@ const UNIQUE_CONSTRAINTS: ReadonlySet<string> = new Set<UniqueConstraint>([
 
 /**
  * `lock_timeout`, deadlock, `statement_timeout`, sessão derrubada pelo servidor
- * (`57P01`–`57P03`) e `idle_in_transaction_session_timeout` de D21 (`25P03`). SCHEMA 5.
+ * (`57P01`–`57P03`) e `idle_in_transaction_session_timeout` (`25P03`).
  */
 const TRANSIENT_SQLSTATES: ReadonlySet<string> = new Set(['55P03', '40P01', '57014', '57P01', '57P02', '57P03', '25P03']);
 
@@ -56,13 +56,13 @@ function isTransient(error: Error, code: unknown): boolean {
   return LOST_CONNECTION_MESSAGE.test(error.message);
 }
 
-/** `lock_timeout` e deadlock: a disputa pelo lock da wallet (ARQUITETURA 9). */
+/** `lock_timeout` e deadlock: a disputa pelo lock da wallet. */
 const LOCK_CONFLICT_SQLSTATES: ReadonlySet<string> = new Set(['55P03', '40P01']);
 
 /**
  * Diz se a falha transitória veio da disputa pelo lock, para alimentar
  * `wagering_lock_conflicts_total`. Lê o SQLSTATE da causa, sem tipo novo na
- * porta da aplicação (D69).
+ * porta da aplicação.
  */
 export function isLockConflict(error: unknown): boolean {
   if (!(error instanceof TransientInfrastructureError)) return false;
@@ -71,7 +71,7 @@ export function isLockConflict(error: unknown): boolean {
 }
 
 /**
- * Traduz o erro do driver para os erros da aplicação (SCHEMA 5). O que não é
+ * Traduz o erro do driver para os erros da aplicação. O que não é
  * unicidade conhecida nem transitório volta sem tradução: `23514`, `23503` e
  * `23000` de trigger são bug, e o estado errado não foi gravado.
  */

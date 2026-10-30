@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import { decodeCursor } from '../../application/queries';
 
-/** Regex de formato monetário decimal estrito (MODELAGEM 2.1). */
+/** Regex de formato monetário decimal estrito. */
 const AMOUNT_REGEX = /^(0|[1-9]\d*)\.(\d{2})$/;
 const CURRENCY_REGEX = /^[A-Z]{3}$/;
 
 /**
- * Schema monetário na borda (CHALLENGE §6.1, restrição 5.1).
+ * Schema monetário na borda.
  * `amount` DEVE ser string decimal. Rejeita `number` imediatamente.
  */
 export const moneySchema = z.object({

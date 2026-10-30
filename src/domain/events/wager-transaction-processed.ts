@@ -7,7 +7,7 @@ import {
 } from '../wager-transaction';
 import { type EventContext, IntegrationEvent, type IntegrationEventProps } from './integration-event';
 
-/** Campos de provedor ausentes só no `OPENING` (D42). */
+/** Campos de provedor ausentes só no `OPENING`. */
 export interface WagerTransactionProcessedData {
   transactionId: string;
   providerId?: string;
@@ -24,7 +24,7 @@ export interface WagerTransactionProcessedData {
   processedAt: string;
 }
 
-/** Qualquer transação aplicada, inclusive `LOSS` e `OPENING` (§11). `aggregateId` = `transactionId`. */
+/** Qualquer transação aplicada, inclusive `LOSS` e `OPENING`. `aggregateId` = `transactionId`. */
 export class WagerTransactionProcessed extends IntegrationEvent<WagerTransactionProcessedData> {
   readonly eventType = 'WagerTransactionProcessed';
   readonly version = 1;
@@ -34,7 +34,7 @@ export class WagerTransactionProcessed extends IntegrationEvent<WagerTransaction
   }
 
   static from(transaction: WagerTransaction, ctx: EventContext): WagerTransactionProcessed {
-    // Campos de provedor só podem faltar no `OPENING` (D42; SCHEMA 2.2, `wager_tx_provider_fields_ck`).
+    // Campos de provedor só podem faltar no `OPENING` (`wager_tx_provider_fields_ck`).
     const missingProviderFields =
       transaction.kind !== WagerTransactionKind.Opening &&
       (transaction.providerId === undefined ||

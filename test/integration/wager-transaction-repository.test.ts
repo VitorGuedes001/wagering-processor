@@ -160,7 +160,7 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
   /**
    * Persiste na conexão SQL a atualização de saldo da wallet e seu lançamento no ledger,
    * para acompanhar transações `PROCESSED` que movem saldo e satisfazer os triggers
-   * deferred (`wallet_ledger_match`, `ledger_wallet_match`) e `assertAllWalletsConsistent` (D40).
+   * deferred (`wallet_ledger_match`, `ledger_wallet_match`) e `assertAllWalletsConsistent`.
    */
   async function persistWalletAndEntry(wallet: Wallet, entry: WalletLedgerEntry): Promise<void> {
     await db.sql.begin(async (tx) => {
@@ -405,7 +405,7 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
     expect(loadedWin?.referenceExternalTransactionId).toBe(betProps.externalTransactionId);
     expect(loadedWin?.referenceTransactionId).toBe(betTx.id);
 
-    // 3. LOSS com amount 0.00 (D3: não move saldo nem gera lançamento)
+    // 3. LOSS com amount 0.00 (não move saldo nem gera lançamento)
     const lossZeroTx = WagerTransaction.create(
       makeTransactionProps({
         walletId: wallet.id,
@@ -438,7 +438,7 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
       currency: 'BRL',
     });
 
-    // 3b. LOSS com amount > 0 (0.01, D3: o provedor pode mandar o stake ou valor positivo; não move saldo)
+    // 3b. LOSS com amount > 0 (0.01: o provedor pode mandar o stake ou valor positivo; não move saldo)
     const lossPositiveTx = WagerTransaction.create(
       makeTransactionProps({
         walletId: wallet.id,
@@ -691,7 +691,7 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
     await repo.insert(lossOnBet1);
     expect(await repo.hasProcessedReversal(bet1.id)).toBe(false);
 
-    // REFUND REJECTED **com** reference_transaction_id apontando para bet1 NÃO ocupa a vaga (D1: exercita o filtro de status = PROCESSED)
+    // REFUND REJECTED **com** reference_transaction_id apontando para bet1 NÃO ocupa a vaga (exercita o filtro de status = PROCESSED)
     const rejectedRefundProps = makeTransactionProps({
       walletId: wallet.id,
       playerId: wallet.playerId,
@@ -926,7 +926,7 @@ describe('I-03 (transação): WagerTransactionRecord e MikroOrmWagerTransactionR
     ghost.reject(FailureCode.InsufficientFunds, wallet.balance, T1);
     await expect(repo.update(ghost)).rejects.toThrow(/não encontrada para update/);
 
-    // 5. tentar regravar por update uma transação já terminal no banco é barrado por wager_tx_guard (D51, D52: SQLSTATE 23000, constraint wager_tx_guard)
+    // 5. tentar regravar por update uma transação já terminal no banco é barrado por wager_tx_guard (SQLSTATE 23000, constraint wager_tx_guard)
     const staleCopy = WagerTransaction.rehydrate({
       id: pendingToReject.id,
       providerId: pendingToReject.providerId,

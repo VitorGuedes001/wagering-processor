@@ -4,7 +4,7 @@ import type { Wallet } from '../wallet';
 import type { LedgerDirection, WalletLedgerEntry } from '../wallet-ledger-entry';
 import { type EventContext, IntegrationEvent, type IntegrationEventProps } from './integration-event';
 
-/** Literal de CHALLENGE §11. */
+/** Formato do evento definido no enunciado. */
 export interface WalletBalanceChangedData {
   walletId: string;
   transactionId: string;
@@ -25,7 +25,7 @@ export class WalletBalanceChanged extends IntegrationEvent<WalletBalanceChangedD
   }
 
   static from(wallet: Wallet, entry: WalletLedgerEntry, ctx: EventContext): WalletBalanceChanged {
-    // Par trocado no use case é bug (MODELAGEM 10.4), não um evento de outra wallet.
+    // Par trocado no use case é bug, não um evento de outra wallet.
     if (entry.walletId !== wallet.id) {
       throw new InvalidTransactionStateError(
         `Ledger entry ${entry.id} belongs to wallet ${entry.walletId}, not ${wallet.id}`,

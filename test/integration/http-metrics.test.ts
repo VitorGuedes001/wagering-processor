@@ -23,7 +23,7 @@ import { holdWalletLock } from '../support/lock-gate';
 import { getTestInfraConfig } from '../support/preload';
 
 /**
- * O caminho HTTP alimenta as métricas de ARQUITETURA 9, como o consumidor
+ * O caminho HTTP alimenta as mesmas métricas, como o consumidor
  * SQS já fazia. Cada asserção compara com a leitura anterior, porque o registry
  * é um só para o arquivo.
  */
