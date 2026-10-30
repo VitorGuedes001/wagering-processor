@@ -37,6 +37,7 @@ a do worktree.
 | T43 Extrato e reconciliação | 4 | G | T20, T31 | Entregue | t43-ledger-reconciliation | C | notas/T43-ledger-reconciliation.md |
 | T50 Cenários de falha | 5 | C | T32, T40, T41 | Entregue | t50-failure-scenarios | G | notas/T50-failure-scenarios.md |
 | T51 Entrega | 5 | H | T42, T43, T50 | Proposta | t51-entrega | C | — |
+| T52 Métricas do caminho HTTP | 5 | C | T31, T33 | Entregue | t52-http-metrics | — | notas/T52-http-metrics.md |
 
 A coluna Onda é o planejamento. As Deps dizem quando uma tarefa **pode**
 começar, e algumas ficam liberadas antes da onda delas (ex.: T32 e T33). Respeite
