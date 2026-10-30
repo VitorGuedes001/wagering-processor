@@ -1,7 +1,7 @@
 /**
- * Entrada e saída dos use cases (D49). Separado de `ports.ts` para o HTTP (T31)
- * e o consumidor SQS (T40) programarem contra estes tipos antes dos use cases
- * (T30) existirem. Nenhum tipo aqui carrega `Money`: só `MoneyProps`.
+ * Entrada e saída dos use cases (D49). Separado de `ports.ts`: o HTTP e o
+ * consumidor SQS programam contra estes tipos, não contra os use cases.
+ * Nenhum tipo aqui carrega `Money`: só `MoneyProps`.
  */
 import type { FailureCode } from '../domain/failure-code';
 import type { MoneyProps } from '../domain/money';

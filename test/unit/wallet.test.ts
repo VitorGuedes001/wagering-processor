@@ -9,7 +9,7 @@ import { Money } from '../../src/domain/money';
 import { Wallet } from '../../src/domain/wallet';
 import { LedgerDirection } from '../../src/domain/wallet-ledger-entry';
 
-/** `Money` real (T10). Negativo só existe vindo do banco, por isso `fromPersistence`. */
+/** `Money` real. Negativo só existe vindo do banco, por isso `fromPersistence`. */
 function money(raw: string, currency = 'BRL'): Money {
   return raw.startsWith('-')
     ? Money.fromPersistence(raw, currency)

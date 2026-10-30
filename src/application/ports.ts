@@ -1,7 +1,7 @@
 /**
  * Portas da aplicação (ARQUITETURA 3). Só existem onde há troca real de
  * implementação (banco, fila) ou onde o teste precisa de controle (relógio, ids).
- * Implementadas em `infrastructure` (T20–T22, T41) e congeladas no M0.
+ * Implementadas em `infrastructure`.
  */
 import type { InboxMessage } from '../domain/inbox-message';
 import type { OutboxMessage } from '../domain/outbox-message';

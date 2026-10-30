@@ -79,7 +79,7 @@ export function toWagerTransactionRecordData(
 /**
  * Implementação MikroORM/PostgreSQL de `WagerTransactionRepository` (ARQUITETURA §3, SCHEMA §2.2, §4.5, §7).
  * Recebe apenas o `EntityManager` da transação corrente via `RepositoryFactories` do `UnitOfWork` (D25).
- * Erros do driver sobem sem tradução local para serem traduzidos na borda do `MikroOrmUnitOfWork` (T20).
+ * Erros do driver sobem sem tradução local para serem traduzidos na borda do `MikroOrmUnitOfWork`.
  */
 export class MikroOrmWagerTransactionRepository implements WagerTransactionRepository {
   constructor(private readonly em: EntityManager) {}

@@ -15,7 +15,7 @@ import {
   type TestQueues,
 } from '../support/queues';
 
-// Visibilidade curta: a redelivery depois de um crash chega em segundos (T50, DP-1).
+// Visibilidade curta: a redelivery depois de um crash chega em segundos (D75).
 const VISIBILITY_SECONDS = 3;
 
 /**
@@ -72,7 +72,7 @@ describe('C-05 e C-08: crash depois do commit e crash com carga (TESTES §4.3)',
           ENABLE_REFERENCE_WORKER: 'false',
         };
 
-        // B só serve HTTP enquanto A vive: assim só A pode receber a mensagem (DP-2).
+        // B só serve HTTP enquanto A vive: assim só A pode receber a mensagem (D76).
         const httpOnly = await start({ ...base, ENABLE_CONSUMER: 'false' });
         const { walletId, playerId } = await openWallet(httpOnly, '1000.00');
 

@@ -12,7 +12,7 @@ import {
 } from '../../src/domain/wager-transaction';
 import { LedgerDirection } from '../../src/domain/wallet-ledger-entry';
 
-// `Money` real (T10), nunca dublê: estes testes só ficam verdes com a T10 na main.
+// `Money` real, nunca dublê.
 const brl = (amount: string): Money => Money.from({ amount, currency: 'BRL' });
 
 const T0 = new Date('2026-10-28T12:00:00.000Z');

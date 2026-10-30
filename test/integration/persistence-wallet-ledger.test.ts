@@ -31,7 +31,7 @@ let other: SQL;
 /** `em` da transação corrente, para gravar por SQL cru as linhas que são de outras tarefas. */
 let currentEm: EntityManager | undefined;
 
-/** Repositório que lança em qualquer chamada: os de transação, inbox e outbox são da T21/T22. */
+/** Repositório que lança em qualquer chamada: os de transação, inbox e outbox ficam fora deste teste. */
 function outOfScope<T extends object>(name: string): () => T {
   const repository = new Proxy({} as T, {
     get: () => {
@@ -78,8 +78,7 @@ function initOrm(poolMax?: number): Promise<MikroORM> {
 /**
  * ORM descartável para os testes que derrubam a conexão. O Kysely 0.29.6 só devolve a
  * conexão ao pool depois de um COMMIT ou ROLLBACK bem-sucedido: com o socket morto,
- * ela fica presa e o `close()` espera para sempre. Por isso o `close` não é aguardado
- * (ver "Fora de escopo / dívida" na nota).
+ * ela fica presa e o `close()` espera para sempre. Por isso o `close` não é aguardado.
  */
 async function withDisposableOrm(fn: (on: MikroORM) => Promise<void>): Promise<void> {
   const disposable = await initOrm();
@@ -95,7 +94,7 @@ async function backendPid(): Promise<number> {
   return row!.pid;
 }
 
-/** A linha de `wager_transaction` que a FK do ledger exige. O repositório de transações é da T21. */
+/** A linha de `wager_transaction` que a FK do ledger exige. Gravada direto, sem o repositório de transações. */
 async function insertTransactionRow(
   row: { id: string; walletId: string; playerId: string; kind: 'OPENING' | 'BET'; amount: string; balanceAfter: string },
 ): Promise<void> {
@@ -118,7 +117,7 @@ async function insertTransactionRow(
   );
 }
 
-/** Abre e grava uma wallet como o `CreateWallet` da T30 fará: wallet, `OPENING` e lançamento. */
+/** Abre e grava uma wallet como o `CreateWallet` faz: wallet, `OPENING` e lançamento. */
 async function openWallet(initialBalance: string): Promise<Wallet> {
   const openingTransactionId = randomUUID();
   const { wallet, openingEntry } = Wallet.open({

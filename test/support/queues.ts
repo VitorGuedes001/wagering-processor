@@ -39,7 +39,7 @@ function isNonExistentQueueError(err: unknown): boolean {
  * Cria as 3 filas FIFO isoladas por arquivo de teste no LocalStack (TESTES D35, §3.2)
  * com os mesmos atributos e redrive policy de `docker/localstack/init-queues.sh`.
  * `visibilityTimeoutSeconds` encurta a visibilidade da fila de entrada para os
- * cenários de crash (C-05, C-08), sem mudar a redrive policy (T50, DP-1).
+ * cenários de crash (C-05, C-08), sem mudar a redrive policy (D75).
  */
 export interface CreateTestQueuesOptions {
   /** Padrão 30, igual ao `init-queues.sh`. */

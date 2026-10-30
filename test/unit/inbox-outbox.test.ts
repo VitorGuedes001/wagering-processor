@@ -10,7 +10,7 @@ import {
 } from '../../src/domain/outbox-message';
 import { WagerTransaction } from '../../src/domain/wager-transaction';
 
-/** Evento real (T12 + T13): o `OPENING` nasce `PROCESSED`, então serve de fonte sem test double. */
+/** Evento real: o `OPENING` nasce `PROCESSED`, então serve de fonte sem test double. */
 function makeEvent(ctx: EventContext, transactionId = 'tx-open-1'): WagerTransactionProcessed {
   const opening = WagerTransaction.opening({
     id: transactionId,

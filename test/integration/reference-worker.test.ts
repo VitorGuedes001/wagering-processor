@@ -187,7 +187,7 @@ describe('I-19: referência que nunca chega vira REFERENCE_NOT_FOUND (TESTES §4
       WagerTransactionRejected: 1,
     });
 
-    // Métricas do worker no registry da T33 (ARQUITETURA 9).
+    // Métricas do worker (ARQUITETURA 9).
     const metrics = await (await fetch(`${app.url}/metrics`)).text();
     expect(metrics).toContain('wagering_retries_total{component="reference_worker"}');
     expect(metrics).toContain('wagering_transactions_total{kind="REFUND",status="REJECTED"}');

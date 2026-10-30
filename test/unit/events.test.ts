@@ -21,7 +21,7 @@ import {
   WalletLedgerEntry,
 } from '../../src/domain/wallet-ledger-entry';
 
-/** `Money` real (T10): sem fallback, para um bug do `Money` não passar calado aqui. */
+/** `Money` real: sem fallback, para um bug do `Money` não passar calado aqui. */
 function makeMoney(amount: string, currency = 'BRL'): Money {
   return Money.from({ amount, currency });
 }
