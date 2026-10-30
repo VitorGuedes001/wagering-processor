@@ -1,8 +1,7 @@
 # Architecture
 
-Decisões, trade-offs e limitações do Wagering Processor. Cada seção é escrita
-quando o bloco correspondente fica pronto ([docs/PLANO.md](docs/PLANO.md)). Até
-lá, aponta para o documento de planejamento de origem.
+Decisões, trade-offs e limitações do Wagering Processor. As seções ainda não
+escritas apontam para o documento de projeto de origem em `docs/`.
 
 ## 1. Visão geral
 
@@ -210,9 +209,6 @@ sem saldo.
   trigger nem índice para trás;
 - I-02 viola cada constraint, FK e trigger por SQL cru, conferindo SQLSTATE **e** nome.
 
-A demo [`scripts/demo-schema.sql`](scripts/demo-schema.sql) mostra cinco desses casos
-manualmente.
-
 ## 5. Concorrência
 
 Detalhe em [docs/SCHEMA.md](docs/SCHEMA.md) §4. Código em `src/application/submit-wager-transaction.ts`, `src/infrastructure/persistence/unit-of-work.ts` e `test/concurrency/`.
@@ -339,7 +335,7 @@ _A escrever no B12._ Fonte: [docs/TESTES.md](docs/TESTES.md).
 
 ## 14. Limitações conhecidas
 
-Orçamento de 36 h ([docs/PLANO.md](docs/PLANO.md) §2):
+Fora do escopo entregue:
 
 - sem teste automatizado de desligamento por `SIGTERM`. Não existe no Windows,
   e o teste exige Linux;

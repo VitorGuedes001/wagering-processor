@@ -218,7 +218,7 @@ em trigger.
 | `wager_tx_guard` | `wager_transaction` | `BEFORE UPDATE OR DELETE` | status terminal não muda. `PENDING_REFERENCE` só vai para ela mesma ou terminal. Colunas de identidade (ids, kind, valor, moeda, hash, key) não mudam. Sem `DELETE`. Linha terminal congelada inteira (D52) |
 | `ledger_wallet_match` (D53) | `wallet_ledger_entry` | `AFTER INSERT`, **constraint trigger `DEFERRABLE INITIALLY DEFERRED`** | no commit, o **último** lançamento da wallet tem `wallet_version = version` e `balance_after = balance` da wallet. Barra lançamento inserido sem a wallet ser atualizada |
 
-Decisões da T14 (migrations), aprovadas em 28/10/2026 — `docs/notas/T14-migrations.md`:
+Decisões da T14 (migrations), aprovadas em 28/10/2026:
 
 | # | Decisão | Por quê |
 |---|---|---|

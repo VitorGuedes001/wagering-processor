@@ -733,7 +733,7 @@ describe('I-03: Repositórios e Records de Inbox e Outbox (SCHEMA 2.4, 2.5, 4.3,
     });
   });
 
-  describe('Integração com a porta UnitOfWork e propagação de SQLSTATE (SCHEMA 5, EXECUCAO §6)', () => {
+  describe('Integração com a porta UnitOfWork e propagação de SQLSTATE (SCHEMA 5)', () => {
     test('inbox e outbox participam atomicamente da mesma transação via interface UnitOfWork (commit e rollback)', async () => {
       // Adaptador mínimo da interface UnitOfWork: o teste usa a porta, não a implementação
       const uow: UnitOfWork = {

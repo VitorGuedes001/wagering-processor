@@ -51,7 +51,7 @@ describe('C-01 a C-03: Concorrência Real e Disputa de Lock (TESTES §4.3; CHALL
     await db.drop();
   });
 
-  test('Sonda de rotas: cluster pronto em /health/ready e relato do estado das rotas HTTP (EXECUCAO §6)', async () => {
+  test('Sonda de rotas: cluster pronto em /health/ready e relato do estado das rotas HTTP', async () => {
     for (const app of cluster.apps) {
       const readyRes = await fetch(`${app.url}/health/ready`);
       expect(readyRes.status).toBe(200);
