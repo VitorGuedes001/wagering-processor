@@ -56,6 +56,20 @@ function isTransient(error: Error, code: unknown): boolean {
   return LOST_CONNECTION_MESSAGE.test(error.message);
 }
 
+/** `lock_timeout` e deadlock: a disputa pelo lock da wallet (ARQUITETURA 9). */
+const LOCK_CONFLICT_SQLSTATES: ReadonlySet<string> = new Set(['55P03', '40P01']);
+
+/**
+ * Diz se a falha transitória veio da disputa pelo lock, para alimentar
+ * `wagering_lock_conflicts_total`. Lê o SQLSTATE da causa e não muda a porta
+ * congelada (D69).
+ */
+export function isLockConflict(error: unknown): boolean {
+  if (!(error instanceof TransientInfrastructureError)) return false;
+  const { code } = (error.cause ?? {}) as PgErrorFields;
+  return typeof code === 'string' && LOCK_CONFLICT_SQLSTATES.has(code);
+}
+
 /**
  * Traduz o erro do driver para os erros da aplicação (SCHEMA 5). O que não é
  * unicidade conhecida nem transitório volta sem tradução: `23514`, `23503` e

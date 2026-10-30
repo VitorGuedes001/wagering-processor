@@ -334,6 +334,7 @@ T43 entregues. Com a reconciliação (I-21), **as 8 eliminatórias estão provad
 |---|---|---|---|---|
 | T50 | C | C-05 e C-08 (crash depois do commit, crash com carga) | os dois verdes, `test:stress` limpo | 1 h |
 | T51 | humano + C | `ARCHITECTURE.md` consolidado, README final, limitações, revisão das 9 restrições | um clone limpo sobe e testa só pelo README | 1,5 h |
+| T52 | C | métricas do caminho HTTP (ARQUITETURA 9): requisições por rota, `transactions_total`, rejeições, `duplicates_total{source="http"}`, latência `entry="http"` e `lock_conflicts_total` no 503. Arquivos: `src/interface/http/{http-metrics.middleware,wagering.controller,error-mapping}.ts`, `src/interface/wagering.module.ts`, `src/infrastructure/persistence/db-errors.ts`, `test/integration/http-metrics.test.ts` | teste novo verde, inclusive C-11 com portão de lock real; `test:all` verde | 1 h |
 
 **Marco M8, entrega.** Clone novo → `bootstrap.ps1` → `bun run test:all` verde.
 Tag `v1.0.0`.
