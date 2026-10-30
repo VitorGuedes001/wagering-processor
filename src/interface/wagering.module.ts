@@ -27,6 +27,7 @@ import { AcceptAllProviderIdentity, PROVIDER_IDENTITY } from '../infrastructure/
 import { AuthGuard } from './http/auth.guard';
 import { CorrelationIdMiddleware } from './http/correlation-id.middleware';
 import { HttpErrorFilter } from './http/error-mapping';
+import { HttpMetricsMiddleware } from './http/http-metrics.middleware';
 import { MetricsController } from './http/metrics.controller';
 import { WageringController } from './http/wagering.controller';
 import { WalletsController } from './http/wallets.controller';
@@ -42,6 +43,7 @@ const WAGERING_PROVIDERS: Provider[] = [
   AuthGuard,
   HttpErrorFilter,
   CorrelationIdMiddleware,
+  HttpMetricsMiddleware,
   SystemClock,
   RandomUuidGenerator,
   { provide: PROVIDER_IDENTITY, useClass: AcceptAllProviderIdentity },
@@ -144,6 +146,6 @@ export class WageringModule implements NestModule {
   }
 
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+    consumer.apply(CorrelationIdMiddleware, HttpMetricsMiddleware).forRoutes('*');
   }
 }

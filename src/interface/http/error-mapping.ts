@@ -4,6 +4,9 @@ import {
   Catch,
   HttpException,
   HttpStatus,
+  Inject,
+  Injectable,
+  Optional,
 } from '@nestjs/common';
 import {
   type CreateWalletOutcome,
@@ -12,6 +15,8 @@ import {
 } from '../../application/contracts';
 import { TransientInfrastructureError } from '../../application/ports';
 import { InvalidMoneyError, InvalidWagerRequestError } from '../../domain/errors';
+import { MetricsRegistry } from '../../infrastructure/observability/metrics';
+import { isLockConflict } from '../../infrastructure/persistence/db-errors';
 import type { HttpResponse } from './types';
 
 export interface ErrorResponseBody {
@@ -26,7 +31,10 @@ export interface ErrorResponseBody {
  * `{ "code": "...", "message": "...", "details"?: [...] }`
  */
 @Catch()
+@Injectable()
 export class HttpErrorFilter implements ExceptionFilter {
+  constructor(@Optional() @Inject(MetricsRegistry) private readonly metrics?: MetricsRegistry) {}
+
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<HttpResponse>();
@@ -56,6 +64,8 @@ export class HttpErrorFilter implements ExceptionFilter {
 
     // 3. Falha transitória de infraestrutura (lock_timeout, conexão) -> 503 SERVICE_UNAVAILABLE + Retry-After
     if (exception instanceof TransientInfrastructureError) {
+      // C-11: o 503 por lock_timeout conta em wagering_lock_conflicts_total.
+      if (isLockConflict(exception)) this.metrics?.lockConflictsTotal.inc();
       response.setHeader('Retry-After', '1');
       const body: ErrorResponseBody = {
         code: RequestErrorCode.ServiceUnavailable,

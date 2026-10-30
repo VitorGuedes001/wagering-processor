@@ -5,6 +5,7 @@ import {
   Headers,
   HttpStatus,
   Inject,
+  Optional,
   Param,
   Post,
   Req,
@@ -12,11 +13,12 @@ import {
   UseFilters,
   UseGuards,
 } from '@nestjs/common';
-import { RequestErrorCode } from '../../application/contracts';
+import { RequestErrorCode, type SubmitOutcome } from '../../application/contracts';
 import type { ProviderIdentityPort } from '../../application/ports';
 import { ApplicationTransactionQueries, type TransactionQueriesPort } from '../../application/queries';
 import { SubmitWagerTransaction } from '../../application/submit-wager-transaction';
-import type { SubmittableKind } from '../../domain/wager-transaction';
+import { type SubmittableKind, WagerTransactionStatus } from '../../domain/wager-transaction';
+import { MetricsRegistry } from '../../infrastructure/observability/metrics';
 import { getCorrelationId } from '../../infrastructure/observability/request-context';
 import { PROVIDER_IDENTITY } from '../../infrastructure/provider-identity';
 import { AuthGuard } from './auth.guard';
@@ -35,6 +37,9 @@ export class WageringController {
     private readonly transactionQueries: TransactionQueriesPort,
     @Inject(PROVIDER_IDENTITY)
     private readonly providerIdentity: ProviderIdentityPort,
+    @Optional()
+    @Inject(MetricsRegistry)
+    private readonly metrics?: MetricsRegistry,
   ) {}
 
   /**
@@ -56,6 +61,7 @@ export class WageringController {
 
     const correlationId = req.correlationId || getCorrelationId() || '';
 
+    const startedAt = performance.now();
     const outcome = await this.submitWagerUseCase.execute({
       providerId: validated.providerId,
       externalTransactionId: validated.externalTransactionId,
@@ -69,8 +75,23 @@ export class WageringController {
       referenceExternalTransactionId: validated.referenceExternalTransactionId,
       correlationId,
     });
+    this.countOutcome(outcome, validated.kind);
+    this.metrics?.processingDurationSeconds.observe({ entry: 'http' }, (performance.now() - startedAt) / 1000);
 
     return mapSubmitOutcomeToResponse(outcome, res);
+  }
+
+  /** Mesma contagem do consumidor SQS (ARQUITETURA 9), com `source="http"` no replay. */
+  private countOutcome(outcome: SubmitOutcome, kind: string): void {
+    if (!this.metrics || outcome.type !== 'RESULT') return;
+    if (outcome.idempotentReplay) {
+      this.metrics.duplicatesTotal.inc({ source: 'http' });
+      return;
+    }
+    this.metrics.transactionsTotal.inc({ kind, status: outcome.view.status });
+    if (outcome.view.status === WagerTransactionStatus.Rejected && outcome.view.failureCode) {
+      this.metrics.transactionsRejectedTotal.inc({ reason: outcome.view.failureCode });
+    }
   }
 
   @Get('wagering/transactions/:transactionId')
