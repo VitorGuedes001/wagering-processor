@@ -12,13 +12,8 @@
     "test": "bun test ./test/unit ./test/architecture",
     "test:integration": "bun test ./test/integration",
     "test:concurrency": "bun test ./test/concurrency",
-    "test:all": "bun scripts/tarefas.ts gate --tudo",
-    "test:stress": "bun test ./test/concurrency --rerun-each 10",
-    "tarefa:status": "bun scripts/tarefas.ts status",
-    "tarefa:iniciar": "bun scripts/tarefas.ts iniciar",
-    "tarefa:gate": "bun scripts/tarefas.ts gate",
-    "skills:sync": "bun scripts/skills-sync.ts",
-    "skills:check": "bun scripts/skills-sync.ts --check"
+    "test:all": "bun run typecheck && bun run test && bun run test:integration && bun run test:concurrency",
+    "test:stress": "bun test ./test/concurrency --rerun-each 10"
   },
   "mikro-orm": {
     "useTsNode": false,

@@ -1,8 +1,6 @@
 # Passo 4 — Modelagem de domínio e códigos de falha
 
-Entidades, invariantes, transições e a taxonomia de `failureCode`. Parte do
-mapeamento em [REAPROVEITAMENTO.md](REAPROVEITAMENTO.md) e fecha o que lá ficou
-como "decisão própria". `§N` aponta para a seção N de [CHALLENGE.md](CHALLENGE.md).
+Entidades, invariantes, transições e a taxonomia de `failureCode`. `§N` aponta para a seção N de [CHALLENGE.md](CHALLENGE.md).
 
 Fica fora deste passo e vai para o passo 5: tabelas, índices, constraints e
 estratégia de lock. Aqui aparecem só as garantias que o schema terá de sustentar.
@@ -31,7 +29,7 @@ o `ARCHITECTURE.md` com a justificativa.
 | D13 | `WALLET_NOT_FOUND` não persiste transação | Sem wallet não há FK válida. Reenviar depois de criar a wallet processa normalmente |
 | D14 | `FAILED` não emite evento | Nenhum dos eventos mínimos cobre. Visível por consulta e métrica |
 
-Decisões do T01 (contratos, M0), aprovadas em 28/10/2026 — `docs/notas/T01-contratos.md`:
+Decisões do T01 (contratos, M0), aprovadas em 28/10/2026:
 
 | # | Decisão | Por quê |
 |---|---|---|
@@ -42,7 +40,7 @@ Decisões do T01 (contratos, M0), aprovadas em 28/10/2026 — `docs/notas/T01-co
 | D46 | `markProcessed(referenceTransactionId, balanceAfter, at)`, `reject(code, balanceAfter, at)`, `fail(code, at)`: desvio explícito do esqueleto de §6.3 | Snapshot do saldo exigido por D10. §6 permite adaptar assinaturas |
 | D47 | Enums com `enum` do TypeScript | Reuso literal do enunciado |
 
-Decisões da T12 (WagerTransaction), aprovadas em 28/10/2026 — `docs/notas/T12-wager-transaction.md`:
+Decisões da T12 (WagerTransaction), aprovadas em 28/10/2026:
 
 | # | Decisão | Por quê |
 |---|---|---|
@@ -51,14 +49,14 @@ Decisões da T12 (WagerTransaction), aprovadas em 28/10/2026 — `docs/notas/T12
 | D56 | `markPendingReference` não verifica se a transação tem referência; só a origem (`PENDING`) é restrita, como em 4.3 | Segue 4.3 à risca. Quem garante é o `decideWager`, que só devolve `AWAIT_REFERENCE` quando há referência |
 | D57 | O worker de referências (T16, T42) considera a referência esgotada **logo depois** do retry que leva `attempts` a `maxAttempts`, sem esperar mais um ciclo | Com `attempts >= max` checado antes do retry, sairiam 11 tentativas (~18,5 min), e não as 10 de D11 (~13,5 min) |
 
-Decisões da T11 (Wallet e ledger), aprovadas em 28/10/2026 — `docs/notas/T11-wallet.md`:
+Decisões da T11 (Wallet e ledger), aprovadas em 28/10/2026:
 
 | # | Decisão | Por quê |
 |---|---|---|
 | D58 | Guardas além de §3 e §6: `WalletLedgerEntry.create` rejeita `balanceBefore` negativo e `walletVersion` que não seja inteiro `>= 1` (`LedgerArithmeticError`); `Wallet.open` rejeita `initialBalance` negativo (`InvalidMoneyError`) | Repetem no domínio os `CHECK` do schema (SCHEMA 2.1, 2.3) e a D16, para o erro aparecer antes do banco |
 | D59 | `debit`/`credit` com valor zero ou negativo lançam `LedgerArithmeticError`, não `InvalidMoneyError` | Chegar ali é bug (`decideWager` filtra antes e `LOSS` não move saldo): tem que virar 500, não um 400 que culpa o cliente (10.4) |
 
-Decisões da T16 (`decideWager` e `reconcile`), aprovadas em 28/10/2026 — `docs/notas/T16-decide-wager.md`:
+Decisões da T16 (`decideWager` e `reconcile`), aprovadas em 28/10/2026:
 
 | # | Decisão | Por quê |
 |---|---|---|
