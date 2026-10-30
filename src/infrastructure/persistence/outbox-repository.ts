@@ -6,7 +6,7 @@ import { OutboxMessageRecord } from './records/outbox-message.record';
 /**
  * Repositório MikroORM de `outbox_message` (SCHEMA 2.5, 4.5; ARQUITETURA 3, 5; D12, D18, D25, D48, D62).
  * Recebe apenas o `EntityManager` da transação corrente via `RepositoryFactories` do `UnitOfWork` (D25).
- * Erros do driver sobem sem tradução local para serem traduzidos na borda do `MikroOrmUnitOfWork` (T20).
+ * Erros do driver sobem sem tradução local para serem traduzidos na borda do `MikroOrmUnitOfWork`.
  */
 export class MikroOrmOutboxRepository implements OutboxRepository {
   constructor(private readonly em: EntityManager) {}

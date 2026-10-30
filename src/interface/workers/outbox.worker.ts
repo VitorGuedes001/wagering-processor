@@ -175,7 +175,7 @@ export class OutboxWorker
 
   /**
    * Lag de outbox: `now - min(occurred_at) WHERE published_at IS NULL` (SCHEMA 4.6;
-   * ARQUITETURA §9). Lido pelo `OutboxLagProbe`, fora da porta congelada (D74).
+   * ARQUITETURA §9). Lido pelo `OutboxLagProbe`, fora da porta `OutboxRepository` (D74).
    */
   async computeLag(now: Date = this.clock.now()): Promise<number> {
     return this.lagProbe.lagSeconds(now);

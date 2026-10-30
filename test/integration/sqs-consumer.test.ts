@@ -33,7 +33,7 @@ describe('Consumidor SQS (I-12 a I-15; CHALLENGE §10, ARQUITETURA 7.2)', () => 
       SQS_INPUT_QUEUE: queues.input,
       SQS_DLQ: queues.dlq,
       SQS_EVENTS_QUEUE: queues.events,
-      // I-15: o lock_timeout curto transforma o portão de lock em falha transitória (DP-5).
+      // I-15: o lock_timeout curto transforma o portão de lock em falha transitória (D66).
       DB_LOCK_TIMEOUT_MS: '300',
       ENABLE_OUTBOX_WORKER: 'false',
       ENABLE_REFERENCE_WORKER: 'false',
@@ -114,7 +114,7 @@ describe('Consumidor SQS (I-12 a I-15; CHALLENGE §10, ARQUITETURA 7.2)', () => 
 
     await eventually(async () => {
       const [row] = await inboxRow(envelope.messageId);
-      expect(row?.processed_at).not.toBeNull(); // DP-4: replay também marca a inbox
+      expect(row?.processed_at).not.toBeNull(); // D65: replay também marca a inbox
       await inputQueueDrained();
     }, QUEUE_TIMEOUT);
 
@@ -197,7 +197,7 @@ describe('Consumidor SQS (I-12 a I-15; CHALLENGE §10, ARQUITETURA 7.2)', () => 
     const { walletId, playerId } = await newWallet('100.00');
     const envelope = anSqsEnvelope(aBet({ walletId, playerId, amount: '15.00' }));
 
-    // DP-5: no lugar de `docker pause` (proibido na infra compartilhada), o portão
+    // D66: no lugar de `docker pause`, o portão
     // segura a wallet e o lock_timeout de 300 ms vira TransientInfrastructureError.
     const gate = await holdWalletLock(db, walletId);
     try {

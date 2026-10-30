@@ -10,7 +10,7 @@ export type RecordProcessingFailureResult = 'RECORDED' | 'ALREADY_EXISTS' | 'SKI
 
 /**
  * Grava `FAILED`/`PROCESSING_FAILED` para uma mensagem na última entrega antes
- * da DLQ (SCHEMA 4.4, MODELAGEM 10.1). Decisão DP-3 da T40:
+ * da DLQ (SCHEMA 4.4, MODELAGEM 10.1, D64):
  *
  * - transação própria, porque a financeira já deu rollback;
  * - só quando o comando é válido e a falha foi transitória ou bug;

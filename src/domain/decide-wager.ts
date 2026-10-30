@@ -37,7 +37,7 @@ export interface DecideWagerInput {
  * - Na submissão inicial (`PENDING`, `referenceAttempts = 0`), a falta de referência
  *   ou referência ainda pendente devolve `AWAIT_REFERENCE`, e o use case chama
  *   `markPendingReference`.
- * - No worker (T42), cada tentativa chama `transaction.scheduleReferenceRetry(now, backoff)`
+ * - No worker de referências, cada tentativa chama `transaction.scheduleReferenceRetry(now, backoff)`
  *   **antes** de `decideWager`. Assim, na tentativa que leva `referenceAttempts` a
  *   `maxAttempts` (ex.: 10ª tentativa de D11), `referenceAttemptsExhausted(backoff)` já
  *   devolve `true`, e `decideWager` rejeita imediatamente com `REFERENCE_NOT_FOUND`

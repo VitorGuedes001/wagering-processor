@@ -59,7 +59,7 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
   onApplicationBootstrap(): void {
     if (!this.config.ENABLE_CONSUMER) return;
     this.running = true;
-    // Lê a política de redrive cedo; falha aqui não impede o consumo (DP-2).
+    // Lê a política de redrive cedo; falha aqui não impede o consumo (D63).
     this.queue.maxReceiveCount().then(
       (max) => {
         if (max === undefined) {
@@ -231,7 +231,7 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
     await this.safely('ChangeMessageVisibility', () => this.queue.delay(message, action.delaySeconds));
   }
 
-  /** DP-3: `FAILED` só na última entrega, com comando válido e falha transitória ou bug. */
+  /** D64: `FAILED` só na última entrega, com comando válido e falha transitória ou bug. */
   private async recordFailed(parsed: Extract<ParsedEnvelope, { ok: true }>): Promise<void> {
     try {
       const result = await this.recordFailure.execute(parsed.command);

@@ -61,8 +61,8 @@ const LOCK_CONFLICT_SQLSTATES: ReadonlySet<string> = new Set(['55P03', '40P01'])
 
 /**
  * Diz se a falha transitória veio da disputa pelo lock, para alimentar
- * `wagering_lock_conflicts_total`. Lê o SQLSTATE da causa e não muda a porta
- * congelada (D69).
+ * `wagering_lock_conflicts_total`. Lê o SQLSTATE da causa, sem tipo novo na
+ * porta da aplicação (D69).
  */
 export function isLockConflict(error: unknown): boolean {
   if (!(error instanceof TransientInfrastructureError)) return false;

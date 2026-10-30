@@ -94,7 +94,7 @@ export class SqsInputQueue {
   }
 
   /**
-   * `maxReceiveCount` da `RedrivePolicy` da fila, lido uma vez (DP-2 da T40): a
+   * `maxReceiveCount` da `RedrivePolicy` da fila, lido uma vez (D63): a
    * fila é a fonte da verdade. Sem política, devolve `undefined`.
    */
   maxReceiveCount(): Promise<number | undefined> {

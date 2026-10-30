@@ -96,7 +96,7 @@ describe('C-07 e C-07b: worker de PENDING_REFERENCE em 3 instâncias (TESTES §4
     );
   }
 
-  // Envelope de CHALLENGE §10, consumido pelo WagerTransactionConsumer da T40.
+  // Envelope de CHALLENGE §10, consumido pelo WagerTransactionConsumer.
   test(
     'C-07: ROLLBACK de WIN e REFUND de BET chegam por SQS antes das referências; ambos PROCESSED',
     async () => {

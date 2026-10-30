@@ -30,7 +30,7 @@ describe('C-01 a C-03: Concorrência Real e Disputa de Lock (TESTES §4.3; CHALL
       OUTBOX_POLL_MS: '50',
     });
 
-    // Sonda de disponibilidade das rotas de negócio (T30/T31)
+    // Sonda de disponibilidade das rotas de negócio
     const probeRes = await fetch(`${cluster.urls[0]}/wagering/transactions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -58,7 +58,7 @@ describe('C-01 a C-03: Concorrência Real e Disputa de Lock (TESTES §4.3; CHALL
     }
 
     if (!routesAvailable) {
-      // EXECUCAO §6 (linha T32): "os testes rodam e falham pelo motivo certo antes do T30/T31 entrarem"
+      // Sem as rotas de negócio, o teste falha pelo motivo certo em vez de passar vazio
       const res = await fetch(`${cluster.urls[0]}/wagering/transactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

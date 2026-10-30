@@ -19,7 +19,7 @@ export class InboxMessageNotProcessedError extends Error {
 /**
  * Repositório MikroORM de `inbox_message` (SCHEMA 2.4, 4.4; ARQUITETURA 3, 5; D7, D25).
  * Recebe apenas o `EntityManager` da transação corrente via `RepositoryFactories` do `UnitOfWork` (D25).
- * Erros do driver sobem sem tradução local para serem traduzidos na borda do `MikroOrmUnitOfWork` (T20).
+ * Erros do driver sobem sem tradução local para serem traduzidos na borda do `MikroOrmUnitOfWork`.
  */
 export class MikroOrmInboxRepository implements InboxRepository {
   constructor(private readonly em: EntityManager) {}

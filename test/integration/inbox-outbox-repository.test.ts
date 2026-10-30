@@ -735,7 +735,7 @@ describe('I-03: Repositórios e Records de Inbox e Outbox (SCHEMA 2.4, 2.5, 4.3,
 
   describe('Integração com a porta UnitOfWork e propagação de SQLSTATE (SCHEMA 5, EXECUCAO §6)', () => {
     test('inbox e outbox participam atomicamente da mesma transação via interface UnitOfWork (commit e rollback)', async () => {
-      // Adaptador mínimo da interface UnitOfWork (EXECUCAO §6: T22 usa UnitOfWork só pela interface até o merge da T20)
+      // Adaptador mínimo da interface UnitOfWork: o teste usa a porta, não a implementação
       const uow: UnitOfWork = {
         async run<T>(work: (tx: TxRepositories) => Promise<T>): Promise<T> {
           return orm.em.fork().transactional(async (txEm) => {

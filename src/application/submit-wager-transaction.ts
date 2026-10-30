@@ -44,7 +44,7 @@ export interface ApplyWagerDecisionInput {
   causationId?: string;
   /**
    * `insert`: transação nova (submissão HTTP/SQS). `update`: transação que já
-   * existe em `PENDING_REFERENCE` (worker, T42), cujo `scheduleReferenceRetry`
+   * existe em `PENDING_REFERENCE` (worker de referências), cujo `scheduleReferenceRetry`
    * o chamador já fez antes de `decideWager` (D57).
    */
   persist: 'insert' | 'update';
