@@ -7,3 +7,6 @@ temp/
 !.env.example
 *.log
 .DS_Store
+
+# documentos de projeto: ficam só na máquina local
+docs/
