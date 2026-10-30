@@ -29,7 +29,7 @@ interface StripCommentsResult {
 /**
  * Remove comentários de bloco e de linha preservando quebras de linha e strings
  * literais, e identifica linhas isentas por comentário explícito de exceção da
- * guarda 5.1 (ARQUITETURA §8: `guard-ignore-5.1` ou `não é caminho de dinheiro`),
+ * guarda de dinheiro (`guard-ignore-5.1` ou `não é caminho de dinheiro`),
  * tanto inline na própria linha quanto em comentário/JSDoc imediatamente acima
  * de uma declaração ou função.
  */
@@ -195,7 +195,7 @@ function resolveLayerOfImport(fromFile: string, specifier: string): string | und
 }
 
 /**
- * Lista branca de imports permitidos em `src/domain` (ARQUITETURA §2):
+ * Lista branca de imports permitidos em `src/domain`:
  * apenas caminhos relativos dentro do próprio `src/domain` e `node:*`.
  */
 export function isAllowedDomainImport(fromFile: string, specifier: string): boolean {
@@ -379,7 +379,7 @@ describe('Arquitetura e Guardas Estáticas (ARQUITETURA §2 e §8)', () => {
     expect(scanMoneyGuardViolations('interface Bad { initialMoney!: number; }')).toHaveLength(1);
 
     // Amostras negativas: tipos permitidos (string, bigint, Money), outras propriedades numéricas na mesma linha,
-    // comentários e exceção explícita documentada (ARQUITETURA §8)
+    // comentários e exceção explícita documentada
     const safeSample = `
       // parseFloat Number( .toFixed Math.floor amount: number balance!: number
       /*

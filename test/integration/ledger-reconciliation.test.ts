@@ -416,12 +416,12 @@ describe('T43 — Extrato e reconciliação (I-21 e teste complementar de extrat
       expect(logEntry.walletId).toBe(walletId);
       expect(logEntry.consistent).toBe(false);
 
-      // 3. Regra de ouro da observabilidade: proibido expor quantia monetária em log (I-23 / restrição 5.1)
+      // 3. Regra de ouro da observabilidade: proibido expor quantia monetária em log (dinheiro nunca aparece no log)
       expect(mismatchLogs[0]).not.toMatch(/"amount"\s*:\s*"[^"]*"/);
       expect(mismatchLogs[0]).not.toMatch(/"storedBalance"/);
       expect(mismatchLogs[0]).not.toMatch(/"calculatedBalance"/);
 
-      // 4. Invariante inviolável (§9): divergências NÃO são corrigidas silenciosamente
+      // 4. Invariante inviolável: divergências NÃO são corrigidas silenciosamente
       const walletAfter = await orm.em.fork().findOne(WalletRecord, { id: walletId });
       expect(walletAfter?.balance).toBe('600.00');
 

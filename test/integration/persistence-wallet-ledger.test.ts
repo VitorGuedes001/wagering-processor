@@ -1,6 +1,6 @@
 /**
  * I-03 (wallet e ledger): ida e volta `domínio → record → domínio`, com dinheiro
- * como string, e o comportamento da Unit of Work (D15, D21, D22, D53, SCHEMA 5).
+ * como string, e o comportamento da Unit of Work.
  */
 import { randomUUID } from 'node:crypto';
 import { ReflectMetadataProvider } from '@mikro-orm/decorators/legacy';
@@ -320,7 +320,7 @@ describe('Unit of Work', () => {
                   current_setting('idle_in_transaction_session_timeout') as idle`,
         );
       });
-      // readSnapshot aplica statement e idle (D21), mas não lock: '0' prova que o 1234ms do run não ficou
+      // readSnapshot aplica statement e idle, mas não lock: '0' prova que o 1234ms do run não ficou
       expect(after[0]).toEqual({ lock: '0', statement: '5s', idle: '10s' });
     } finally {
       await single.close(true);

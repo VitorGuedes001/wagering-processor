@@ -36,10 +36,10 @@ function isNonExistentQueueError(err: unknown): boolean {
 }
 
 /**
- * Cria as 3 filas FIFO isoladas por arquivo de teste no LocalStack (TESTES D35, §3.2)
+ * Cria as 3 filas FIFO isoladas por arquivo de teste no LocalStack
  * com os mesmos atributos e redrive policy de `docker/localstack/init-queues.sh`.
  * `visibilityTimeoutSeconds` encurta a visibilidade da fila de entrada para os
- * cenários de crash (C-05, C-08), sem mudar a redrive policy (D75).
+ * cenários de crash (C-05, C-08), sem mudar a redrive policy.
  */
 export interface CreateTestQueuesOptions {
   /** Padrão 30, igual ao `init-queues.sh`. */
@@ -189,7 +189,7 @@ export async function deleteTestQueues(queues: TestQueues): Promise<void> {
 }
 
 export interface SendEnvelopeOptions {
-  /** `MessageGroupId` do FIFO. Padrão: `walletId` do envelope, como ARQUITETURA 7.2 recomenda ao produtor. */
+  /** `MessageGroupId` do FIFO. Padrão: `walletId` do envelope, como recomendado ao produtor. */
   groupId?: string;
   /**
    * `MessageDeduplicationId`. Padrão: aleatório, para que o mesmo envelope

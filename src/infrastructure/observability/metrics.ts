@@ -33,7 +33,7 @@ export class MetricsRegistry {
   // Reconciliation metrics
   readonly reconciliationInconsistenciesTotal: Counter<string>;
 
-  // Additional ARQUITETURA §9 metrics for full interoperability
+  // Métricas de duplicatas, retries, DLQ, latência e reconciliação
   readonly duplicatesTotal: Counter<string>;
   readonly retriesTotal: Counter<string>;
   readonly dlqTotal: Counter<string>;

@@ -20,7 +20,7 @@ interface PgErrorShape {
 /**
  * Executa `fn` e verifica que o PostgreSQL rejeita a operação com o `SQLSTATE`
  * esperado (`23514` CHECK, `23505` UNIQUE, `23503` FK, `23000` trigger, `55P03` lock_timeout)
- * e, quando informado, com o campo `constraint` do erro (D51: nunca pela mensagem textual).
+ * e, quando informado, com o campo `constraint` do erro (nunca pela mensagem textual).
  */
 async function expectPgError(
   fn: () => Promise<unknown>,
@@ -75,7 +75,7 @@ async function inTx<T>(conn: SQL, work: (conn: SQL) => Promise<T>): Promise<T> {
 /**
  * Prova explicitamente que `work` passa dentro da transação e que a falha
  * `expectedSqlState` + `expectedConstraint` acontece exclusivamente no `COMMIT`
- * (triggers `DEFERRABLE INITIALLY DEFERRED`, SCHEMA §3 e §9).
+ * (triggers `DEFERRABLE INITIALLY DEFERRED`).
  */
 async function expectDeferredCommitError(
   conn: SQL,
@@ -1349,7 +1349,7 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
         `;
       });
 
-      // 1. D52 em PROCESSED: congelamento integral da linha (mudar só balance_after, processed_at, updated_at, reference_transaction_id ou status)
+      // 1. Em PROCESSED: congelamento integral da linha (mudar só balance_after, processed_at, updated_at, reference_transaction_id ou status)
       await expectPgError(
         () =>
           inTx(db.sql, async (tx) => {
@@ -1395,7 +1395,7 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
         'wager_tx_guard',
       );
 
-      // 2. D52 em REJECTED: congelamento integral (mudar só balance_after, failure_code, updated_at ou status)
+      // 2. Em REJECTED: congelamento integral (mudar só balance_after, failure_code, updated_at ou status)
       await expectPgError(
         () =>
           inTx(db.sql, async (tx) => {
@@ -1433,7 +1433,7 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
         'wager_tx_guard',
       );
 
-      // 3. D52 em FAILED: congelamento integral (mudar só failure_code, updated_at ou status)
+      // 3. Em FAILED: congelamento integral (mudar só failure_code, updated_at ou status)
       await expectPgError(
         () =>
           inTx(db.sql, async (tx) => {
@@ -1509,7 +1509,7 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
         'wager_tx_guard',
       );
 
-      // 7. Caminho válido de PENDING_REFERENCE (SCHEMA §3 e §9):
+      // 7. Caminho válido de PENDING_REFERENCE:
       // 7a. PENDING_REFERENCE → PENDING_REFERENCE (novo agendamento de tentativa)
       await inTx(db.sql, async (tx) => {
         await tx`
@@ -2117,7 +2117,7 @@ describe('I-02 — Schema, constraints, triggers e locks por SQL cru (SCHEMA §2
         expect(conn2Resolved).toBe(true);
         await conn2.unsafe('COMMIT');
 
-        // 3. lock_timeout = '2s' (D21, SCHEMA §9): conn1 segura walletA, conn2 falha com 55P03 em ~2 s
+        // 3. lock_timeout = '2s': conn1 segura walletA, conn2 falha com 55P03 em ~2 s
         await conn1.unsafe('BEGIN');
         await conn1`SELECT id FROM wallet WHERE id = ${walletA.id} FOR UPDATE`;
 

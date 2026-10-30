@@ -3,10 +3,10 @@ import { MikroORM } from '@mikro-orm/postgresql';
 import { MikroOrmOutboxRepository } from './outbox-repository';
 
 /**
- * Lag do outbox para a métrica `wagering_outbox_lag_seconds` (SCHEMA 4.6; ARQUITETURA §9).
+ * Lag do outbox para a métrica `wagering_outbox_lag_seconds`.
  * Leitura de observabilidade fora da Unit of Work, como o `ReadinessProbe`: a porta
  * `OutboxRepository` não muda, e o worker chama este provider de infraestrutura
- * direto (D74).
+ * direto.
  */
 @Injectable()
 export class OutboxLagProbe {

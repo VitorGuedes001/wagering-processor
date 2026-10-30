@@ -8,7 +8,7 @@ import { WalletRecord } from './records/wallet.record';
 
 /**
  * Executa cada operação na hora, sem `persist`/`flush` e sem identity map: a
- * ordem das escritas é a do use case (SCHEMA 4.2) e o erro aparece na chamada.
+ * ordem das escritas é a do use case e o erro aparece na chamada.
  */
 export class MikroOrmWalletRepository implements WalletRepository {
   constructor(private readonly em: EntityManager) {}
@@ -39,7 +39,7 @@ export class MikroOrmWalletRepository implements WalletRepository {
     });
   }
 
-  /** `version` como defesa extra ao lock (SCHEMA 4.1): zero linhas é bug, não corrida. */
+  /** `version` como defesa extra ao lock: zero linhas é bug, não corrida. */
   async update(wallet: Wallet, expectedVersion: number): Promise<void> {
     const affected = await this.em.nativeUpdate(
       WalletRecord,

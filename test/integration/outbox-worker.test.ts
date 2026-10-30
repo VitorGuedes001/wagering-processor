@@ -137,7 +137,7 @@ describe('I-16: Outbox Worker Integration (TESTES §4.2; ARQUITETURA §7.3; D18,
     `;
     expect(pendingRow?.published_at).toBeNull();
 
-    // Com o evento pendente, o lag é a idade do mais antigo (SCHEMA 4.6)
+    // Com o evento pendente, o lag é a idade do mais antigo
     const pendingLag = await worker.computeLag(new Date(now.getTime() + 5_000));
     expect(pendingLag).toBeCloseTo(5, 1);
 
@@ -171,7 +171,7 @@ describe('I-16: Outbox Worker Integration (TESTES §4.2; ARQUITETURA §7.3; D18,
     expect(parsedBody.eventType).toBe('WalletBalanceChanged');
     expect(parsedBody.aggregateId).toBe(walletId);
 
-    // FIFO attributes (D20)
+    // FIFO attributes
     expect(received.Attributes?.MessageGroupId).toBe(walletId);
     expect(received.Attributes?.MessageDeduplicationId).toBe(eventId);
 

@@ -31,7 +31,7 @@ describe('C-07 e C-07b: worker de PENDING_REFERENCE em 3 instâncias (TESTES §4
       SQS_DLQ: queues.dlq,
       SQS_EVENTS_QUEUE: queues.events,
       PORT: '0',
-      DB_LOCK_TIMEOUT_MS: '10000', // portão de lock (TESTES §3.3)
+      DB_LOCK_TIMEOUT_MS: '10000', // portão de lock
       ENABLE_OUTBOX_WORKER: 'false',
       REFERENCE_POLL_MS: '50',
       REFERENCE_BACKOFF_BASE_MS: '20',
@@ -90,13 +90,13 @@ describe('C-07 e C-07b: worker de PENDING_REFERENCE em 3 instâncias (TESTES §4
       new SendMessageCommand({
         QueueUrl: queues.inputUrl,
         MessageBody: JSON.stringify(envelope),
-        MessageGroupId: wager.walletId, // ARQUITETURA 7: walletId como grupo
+        MessageGroupId: wager.walletId, // walletId como grupo
         MessageDeduplicationId: envelope.messageId,
       }),
     );
   }
 
-  // Envelope de CHALLENGE §10, consumido pelo WagerTransactionConsumer.
+  // Envelope da fila de entrada, consumido pelo WagerTransactionConsumer.
   test(
     'C-07: ROLLBACK de WIN e REFUND de BET chegam por SQS antes das referências; ambos PROCESSED',
     async () => {

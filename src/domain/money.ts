@@ -1,14 +1,14 @@
 import { CurrencyMismatchError, InvalidMoneyError } from './errors';
 
-/** Contrato de dinheiro nas bordas (CHALLENGE §6.1): `{ "amount": "25.00", "currency": "BRL" }`. */
+/** Contrato de dinheiro nas bordas: `{ "amount": "25.00", "currency": "BRL" }`. */
 export interface MoneyProps {
-  /** String decimal com exatamente 2 casas. Nunca `number` (restrição 5.1). */
+  /** String decimal com exatamente 2 casas. Nunca `number`. */
   amount: string;
   /** ISO-4217, três letras maiúsculas. */
   currency: string;
 }
 
-/** Entrada: sem sinal, sem zero à esquerda, exatamente 2 casas (MODELAGEM 2.1). */
+/** Entrada: sem sinal, sem zero à esquerda, exatamente 2 casas. */
 const INPUT_AMOUNT = /^(0|[1-9]\d*)\.(\d{2})$/;
 /** Banco: como a entrada, mas com `-` opcional (`difference` da reconciliação). */
 const PERSISTED_AMOUNT = /^(-?)(0|[1-9]\d*)\.(\d{2})$/;
@@ -19,9 +19,9 @@ const MAX_INTEGER_DIGITS = 17;
 /**
  * Valor monetário imutável: toda operação devolve uma instância nova.
  *
- * Internamente, centavos em `bigint` (D8). Nunca arredonda: mais de 2 casas é
- * rejeitado (D9). Operação entre moedas diferentes lança `CurrencyMismatchError`.
- * Regras de entrada em MODELAGEM 2.1.
+ * Internamente, centavos em `bigint`. Nunca arredonda: mais de 2 casas é
+ * rejeitado. Operação entre moedas diferentes lança `CurrencyMismatchError`.
+ * Entrada estrita: duas casas, sem sinal, sem número JSON.
  */
 export class Money {
   private constructor(
@@ -110,7 +110,7 @@ export class Money {
   }
 }
 
-/** Parse só textual (ARQUITETURA 8): as partes já passaram pela regex. */
+/** Parse só textual: as partes já passaram pela regex. */
 function toCents(integer: string, fraction: string): bigint {
   if (integer.length > MAX_INTEGER_DIGITS) {
     throw new InvalidMoneyError(`amount excede ${MAX_INTEGER_DIGITS} dígitos inteiros`);
@@ -118,7 +118,7 @@ function toCents(integer: string, fraction: string): bigint {
   return BigInt(integer) * 100n + BigInt(fraction);
 }
 
-/** Formatação só textual (ARQUITETURA 8): `/ 100n`, `% 100n` e `padStart`. */
+/** Formatação só textual: `/ 100n`, `% 100n` e `padStart`. */
 function formatCents(cents: bigint): string {
   const negative = cents < 0n;
   const absolute = negative ? -cents : cents;

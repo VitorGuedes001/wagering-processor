@@ -43,7 +43,7 @@ export class WageringController {
   ) {}
 
   /**
-   * Submete uma aposta financeira (CHALLENGE §9, ARQUITETURA §6).
+   * Submete uma aposta financeira.
    * Aceita tanto `/wagering/transactions` quanto `/wagers/v1`.
    */
   @Post(['wagering/transactions', 'wagers/v1'])
@@ -56,7 +56,7 @@ export class WageringController {
     const idempotencyKey = idempotencyKeyHeaderSchema.parse(rawIdempotencyKey);
     const validated = wagerTransactionSchema.parse(rawBody);
 
-    // Ponto de extensão da auth (D31): hoje aceita tudo.
+    // Ponto de extensão da auth: hoje aceita tudo.
     this.providerIdentity.assertMaySubmit(req.caller ?? { providerId: undefined }, validated.providerId);
 
     const correlationId = req.correlationId || getCorrelationId() || '';
@@ -81,7 +81,7 @@ export class WageringController {
     return mapSubmitOutcomeToResponse(outcome, res);
   }
 
-  /** Mesma contagem do consumidor SQS (ARQUITETURA 9), com `source="http"` no replay. */
+  /** Mesma contagem do consumidor SQS, com `source="http"` no replay. */
   private countOutcome(outcome: SubmitOutcome, kind: string): void {
     if (!this.metrics || outcome.type !== 'RESULT') return;
     if (outcome.idempotentReplay) {

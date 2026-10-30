@@ -1,6 +1,6 @@
 import type { IntegrationEvent } from './events/integration-event';
 
-/** Backoff de publicação: `min(2^attempts × base, teto)`, sem limite de tentativas (D12). */
+/** Backoff de publicação: `min(2^attempts × base, teto)`, sem limite de tentativas. */
 export const OUTBOX_BACKOFF_BASE_MS = 1_000;
 export const OUTBOX_BACKOFF_MAX_MS = 60_000;
 
@@ -11,13 +11,13 @@ export interface OutboxMessageState {
   payload: Readonly<Record<string, unknown>>;
   occurredAt: Date;
   attempts: number;
-  /** Também é o lease do worker (D18). `NOT NULL` no schema. */
+  /** Também é o lease do worker. `NOT NULL` no schema. */
   nextAttemptAt: Date;
   publishedAt?: Date;
 }
 
 /**
- * Evento esperando publicação (CHALLENGE §6.5, §11). Entra na mesma transação
+ * Evento esperando publicação. Entra na mesma transação
  * da mudança financeira. Um worker publica depois do commit.
  */
 export class OutboxMessage {

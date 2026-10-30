@@ -1,5 +1,5 @@
 /**
- * Portas da aplicação (ARQUITETURA 3). Só existem onde há troca real de
+ * Portas da aplicação. Só existem onde há troca real de
  * implementação (banco, fila) ou onde o teste precisa de controle (relógio, ids).
  * Implementadas em `infrastructure`.
  */
@@ -11,7 +11,7 @@ import type { WalletLedgerEntry } from '../domain/wallet-ledger-entry';
 
 /**
  * Falha que vale a pena tentar de novo: `lock_timeout`, deadlock, timeout,
- * conexão (SCHEMA 5). Vira 503 no HTTP e retry com backoff na fila.
+ * conexão. Vira 503 no HTTP e retry com backoff na fila.
  */
 export class TransientInfrastructureError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -20,7 +20,7 @@ export class TransientInfrastructureError extends Error {
   }
 }
 
-/** Índices únicos que o use case precisa distinguir (SCHEMA 2, nomes explícitos de propósito). */
+/** Índices únicos que o use case precisa distinguir (nomes explícitos de propósito). */
 export type UniqueConstraint =
   | 'wallet_player_currency_uq'
   | 'wager_tx_idempotency_uq'
@@ -32,7 +32,7 @@ export type UniqueConstraint =
 
 /**
  * `23505` traduzido pela infraestrutura, sem vazar o erro do driver para a
- * aplicação. O use case decide pela constraint (SCHEMA 5): idempotência → refaz
+ * aplicação. O use case decide pela constraint: idempotência → refaz
  * o fluxo uma vez; `wallet_player_currency_uq` → `WALLET_ALREADY_EXISTS`; as
  * demais → bug, porque o lock da wallet deveria ter impedido.
  */
@@ -49,9 +49,9 @@ export class UniqueViolationError extends Error {
 // ------------------------------------------------------------------ transação
 
 export interface UnitOfWork {
-  /** Abre transação (`READ COMMITTED` + timeouts D21) e entrega os repositórios ligados a ela. Commit ao resolver, rollback ao lançar. */
+  /** Abre transação (`READ COMMITTED` + timeouts locais) e entrega os repositórios ligados a ela. Commit ao resolver, rollback ao lançar. */
   run<T>(work: (tx: TxRepositories) => Promise<T>): Promise<T>;
-  /** Snapshot `REPEATABLE READ READ ONLY`, para a reconciliação (D22). */
+  /** Snapshot `REPEATABLE READ READ ONLY`, para a reconciliação. */
   readSnapshot<T>(work: (tx: TxRepositories) => Promise<T>): Promise<T>;
 }
 
@@ -66,7 +66,7 @@ export interface TxRepositories {
 // ------------------------------------------------------------------ repositórios
 
 export interface WalletRepository {
-  /** `SELECT … FOR UPDATE` (D15). */
+  /** `SELECT … FOR UPDATE`. */
   lockById(id: string): Promise<Wallet | undefined>;
   findById(id: string): Promise<Wallet | undefined>;
   insert(wallet: Wallet): Promise<void>;
@@ -78,11 +78,11 @@ export interface WagerTransactionRepository {
   findByIdempotencyKey(providerId: string, idempotencyKey: string): Promise<WagerTransaction | undefined>;
   findByExternalId(providerId: string, externalTransactionId: string): Promise<WagerTransaction | undefined>;
   findById(id: string): Promise<WagerTransaction | undefined>;
-  /** Existe `REFUND`/`ROLLBACK` `PROCESSED` com esta referência (D1). */
+  /** Existe `REFUND`/`ROLLBACK` `PROCESSED` com esta referência. */
   hasProcessedReversal(referenceTransactionId: string): Promise<boolean>;
-  /** `SELECT … FOR UPDATE`. O worker relê a pendente depois de travar a wallet (SCHEMA 4.5). */
+  /** `SELECT … FOR UPDATE`. O worker relê a pendente depois de travar a wallet. */
   lockById(id: string): Promise<WagerTransaction | undefined>;
-  /** Reserva por lease com `SKIP LOCKED` as `PENDING_REFERENCE` vencidas (D18). Devolve ids. */
+  /** Reserva por lease com `SKIP LOCKED` as `PENDING_REFERENCE` vencidas. Devolve ids. */
   claimDuePendingReferences(now: Date, limit: number, leaseMs: number): Promise<string[]>;
   insert(transaction: WagerTransaction): Promise<void>;
   update(transaction: WagerTransaction): Promise<void>;
@@ -99,14 +99,14 @@ export interface LedgerRepository {
 export type InboxReceiveResult = { accepted: true } | { accepted: false; storedPayloadHash: string };
 
 export interface InboxRepository {
-  /** `INSERT … ON CONFLICT DO NOTHING`. Se já existia, devolve o hash gravado (D7). */
+  /** `INSERT … ON CONFLICT DO NOTHING`. Se já existia, devolve o hash gravado. */
   tryReceive(message: InboxMessage): Promise<InboxReceiveResult>;
   markProcessed(message: InboxMessage): Promise<void>;
 }
 
 export interface OutboxRepository {
   enqueue(messages: OutboxMessage[]): Promise<void>;
-  /** Reserva por lease com `SKIP LOCKED` (D18, D62). Usa a transação recebida; o worker deve chamá-lo sozinho num `uow.run` curto. */
+  /** Reserva por lease com `SKIP LOCKED`. Usa a transação recebida; o worker deve chamá-lo sozinho num `uow.run` curto. */
   claimDue(now: Date, limit: number, leaseMs: number): Promise<OutboxMessage[]>;
   markPublished(id: string, at: Date): Promise<void>;
   scheduleRetry(message: OutboxMessage): Promise<void>;
@@ -114,7 +114,7 @@ export interface OutboxRepository {
 
 // ------------------------------------------------------------------ fora do banco
 
-/** Publica no SQS, **fora** de transação (restrição 4). Duplicata é aceita: o consumidor deduplica por `eventId`. */
+/** Publica no SQS, **fora** de transação. Duplicata é aceita: o consumidor deduplica por `eventId`. */
 export interface EventPublisher {
   publish(message: OutboxMessage): Promise<void>;
 }
@@ -128,12 +128,12 @@ export interface IdGenerator {
   next(): string;
 }
 
-/** Quem chamou a API. Sem auth implementada, `providerId` é sempre ausente (D31). */
+/** Quem chamou a API. Sem auth implementada, `providerId` é sempre ausente. */
 export interface CallerIdentity {
   providerId: string | undefined;
 }
 
-/** Ponto de extensão da auth (§2, D31): lança quando o chamador não pode submeter em nome do provedor. */
+/** Ponto de extensão da auth: lança quando o chamador não pode submeter em nome do provedor. */
 export interface ProviderIdentityPort {
   assertMaySubmit(caller: CallerIdentity, providerId: string): void;
 }

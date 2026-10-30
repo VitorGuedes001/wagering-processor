@@ -11,7 +11,7 @@ import {
 } from './preload';
 
 export interface CreateTestDatabaseOptions {
-  /** Se `true` (padrão), clona de `wagering_template_<hash>` (D34, D60). Se `false` (I-01), cria banco vazio. */
+  /** Se `true` (padrão), clona de `wagering_template_<hash>`. Se `false` (I-01), cria banco vazio. */
   fromTemplate?: boolean;
 }
 
@@ -24,7 +24,7 @@ export interface TestDatabase {
   migrateUp(): Promise<void>;
   /** Roda `orm.migrator.down({ to: 0 })` contra este banco. */
   migrateDownToZero(): Promise<void>;
-  /** Limpa dados das tabelas existentes usando `session_replication_role = replica` (SCHEMA §3). */
+  /** Limpa dados das tabelas existentes usando `session_replication_role = replica`. */
   reset(): Promise<void>;
   /** Fecha conexões e executa `DROP DATABASE IF EXISTS ... WITH (FORCE)`. */
   drop(): Promise<void>;
@@ -55,7 +55,7 @@ async function withCreateDbLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Cria um banco PostgreSQL isolado para um arquivo de teste (TESTES D34, D60, §3.1).
+ * Cria um banco PostgreSQL isolado para um arquivo de teste.
  * Nunca usa o banco `wagering`.
  */
 export async function createTestDatabase(

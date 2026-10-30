@@ -36,7 +36,7 @@ import { OutboxLagProbe } from '../infrastructure/persistence/outbox-lag-probe';
 import { OutboxWorker } from './workers/outbox.worker';
 import { PendingReferenceWorker } from './workers/pending-reference.worker';
 
-/** Sem `APP_CONFIG` (módulo montado sozinho em teste), vale o default de D11. */
+/** Sem `APP_CONFIG` (módulo montado sozinho em teste), vale o backoff padrão. */
 const OPTIONAL_CONFIG = { token: APP_CONFIG, optional: true };
 
 const WAGERING_PROVIDERS: Provider[] = [
@@ -75,9 +75,9 @@ const WAGERING_PROVIDERS: Provider[] = [
     useFactory: (uow: UnitOfWork, publisher: EventPublisher, clock: Clock) =>
       new PublishOutbox(uow, publisher, clock),
   },
-  // Só consome se ENABLE_CONSUMER (D28); depende do SqsInputQueue do MessagingModule.
+  // Só consome se ENABLE_CONSUMER; depende do SqsInputQueue do MessagingModule.
   WagerTransactionConsumer,
-  // Só roda se ENABLE_OUTBOX_WORKER (D28); preso ao ciclo de vida do Nest (D32, §7.3).
+  // Só roda se ENABLE_OUTBOX_WORKER; preso ao ciclo de vida do Nest.
   OutboxWorker,
   {
     provide: ResolvePendingReferences,
@@ -89,7 +89,7 @@ const WAGERING_PROVIDERS: Provider[] = [
         backoff: config ? referenceBackoffFrom(config) : DEFAULT_REFERENCE_BACKOFF,
       }),
   },
-  // Só roda se ENABLE_REFERENCE_WORKER (D28).
+  // Só roda se ENABLE_REFERENCE_WORKER.
   PendingReferenceWorker,
   {
     provide: ReconcileWallet,
@@ -109,7 +109,7 @@ const WAGERING_PROVIDERS: Provider[] = [
 ];
 
 /**
- * Controllers, use cases, consumidor SQS e workers (ARQUITETURA §11).
+ * Controllers, use cases, consumidor SQS e workers.
  * O `UNIT_OF_WORK` vem do `PersistenceModule`; `withUnitOfWork` liga uma instância
  * pronta (testes).
  */
@@ -121,8 +121,8 @@ const WAGERING_PROVIDERS: Provider[] = [
 export class WageringModule implements NestModule {
   /**
    * Só HTTP, com uma UoW pronta (testes em processo). Sem fila nem workers: o
-   * consumidor e os workers recebem flags false (D28), e nenhum adaptador SQS.
-   * A config não lê `process.env`, então nunca aponta para as filas padrão (TESTES D35).
+   * consumidor e os workers recebem flags false, e nenhum adaptador SQS.
+   * A config não lê `process.env`, então nunca aponta para as filas padrão.
    */
   static withUnitOfWork(uow: UnitOfWork): DynamicModule {
     return {

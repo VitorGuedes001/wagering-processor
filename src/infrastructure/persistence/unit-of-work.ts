@@ -8,12 +8,12 @@ import { translateDbError } from './db-errors';
 /** Monta cada repositório ligado ao `EntityManager` da transação. Composto no `PersistenceModule`. */
 export type RepositoryFactories = { [K in keyof TxRepositories]: (em: EntityManager) => TxRepositories[K] };
 
-/** D21: uma transação travada não segura o lock de uma wallet para sempre. */
+/** Timeouts locais: uma transação travada não segura o lock de uma wallet para sempre. */
 const STATEMENT_TIMEOUT = '5s';
 const IDLE_IN_TRANSACTION_TIMEOUT = '10s';
 
 /**
- * Unit of Work explícita (D25): o que está dentro da transação é o que roda
+ * Unit of Work explícita: o que está dentro da transação é o que roda
  * dentro de `work`. Cada chamada usa um `EntityManager` próprio, sem
  * `AsyncLocalStorage`.
  */
@@ -24,7 +24,7 @@ export class MikroOrmUnitOfWork implements UnitOfWork {
     private readonly factories: RepositoryFactories,
   ) {}
 
-  /** `READ COMMITTED` (D15) com os `SET LOCAL` de D21 antes de qualquer outra query. */
+  /** `READ COMMITTED` com os timeouts locais antes de qualquer outra query. */
   run<T>(work: (tx: TxRepositories) => Promise<T>): Promise<T> {
     return this.transaction(
       async (em) => {
@@ -43,8 +43,8 @@ export class MikroOrmUnitOfWork implements UnitOfWork {
   }
 
   /**
-   * Wallet e ledger do mesmo snapshot, sem lock (D22). Escrita falha com `25006`.
-   * Sem `lock_timeout`, porque não trava nada, mas com os outros dois de D21: um
+   * Wallet e ledger do mesmo snapshot, sem lock. Escrita falha com `25006`.
+   * Sem `lock_timeout`, porque não trava nada, mas com os outros dois timeouts: um
    * snapshot parado seguraria a conexão e o horizonte de limpeza do Postgres.
    */
   readSnapshot<T>(work: (tx: TxRepositories) => Promise<T>): Promise<T> {
@@ -62,7 +62,7 @@ export class MikroOrmUnitOfWork implements UnitOfWork {
   }
 
   /**
-   * A tradução envolve o `work` **e o COMMIT**: os triggers deferred (D53) só
+   * A tradução envolve o `work` **e o COMMIT**: os triggers deferred só
    * falham no commit, e são as garantias mais fortes do schema.
    */
   private async transaction<T>(

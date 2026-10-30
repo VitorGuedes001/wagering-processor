@@ -26,7 +26,7 @@ export interface ErrorResponseBody {
 }
 
 /**
- * Filtro global de exceções HTTP (ARQUITETURA §6.2).
+ * Filtro global de exceções HTTP.
  * Garante que qualquer erro na borda segue o contrato:
  * `{ "code": "...", "message": "...", "details"?: [...] }`
  */
@@ -112,7 +112,7 @@ export class HttpErrorFilter implements ExceptionFilter {
 }
 
 /**
- * Mapeia o SubmitOutcome do use case para o status HTTP e formato exato de ARQUITETURA §6.2.
+ * Mapeia o SubmitOutcome do use case para o status HTTP e o corpo da resposta.
  */
 export function mapSubmitOutcomeToResponse(outcome: SubmitOutcome, res: HttpResponse) {
   switch (outcome.type) {
@@ -165,7 +165,7 @@ export function mapSubmitOutcomeToResponse(outcome: SubmitOutcome, res: HttpResp
 }
 
 /**
- * Mapeia o CreateWalletOutcome para o status HTTP e formato de CHALLENGE §9.
+ * Mapeia o CreateWalletOutcome para o status HTTP e o corpo da resposta.
  */
 export function mapCreateWalletOutcomeToResponse(outcome: CreateWalletOutcome, res: HttpResponse) {
   switch (outcome.type) {

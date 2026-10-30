@@ -323,7 +323,7 @@ describe('T30: Use cases de Wallet e Submissão (ARQUITETURA §4, SCHEMA §4.2, 
       expect(walletRow).toBeDefined();
       expect(walletRow!.balance).toBe('750.00');
 
-      // Replay da primeira requisição: DEVE devolver o saldo daquela época (950.00, D10)
+      // Replay da primeira requisição: DEVE devolver o saldo daquela época (950.00)
       const second = await submit.execute(command);
       expect(second.type).toBe('RESULT');
       if (second.type !== 'RESULT') return;

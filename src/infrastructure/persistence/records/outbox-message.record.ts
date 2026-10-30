@@ -2,8 +2,8 @@ import { Entity, PrimaryKey, Property } from '@mikro-orm/decorators/legacy';
 import { OutboxMessage } from '../../../domain/outbox-message';
 
 /**
- * Entidade de persistência da tabela `outbox_message` (SCHEMA 2.5, 7).
- * Separada de `OutboxMessage` para manter o domínio livre de ORM (§6.1, A-01).
+ * Entidade de persistência da tabela `outbox_message`.
+ * Separada de `OutboxMessage` para manter o domínio livre de ORM.
  */
 @Entity({ tableName: 'outbox_message' })
 export class OutboxMessageRecord {

@@ -3,7 +3,7 @@ import { generateUuidV7 } from '../../infrastructure/id-generator';
 import { runWithRequestContext } from '../../infrastructure/observability/request-context';
 import type { HttpRequest, HttpResponse } from './types';
 
-/** Propaga ou gera o `X-Correlation-Id` e abre o contexto da requisição (ARQUITETURA §6.1, D29). */
+/** Propaga ou gera o `X-Correlation-Id` e abre o contexto da requisição. */
 @Injectable()
 export class CorrelationIdMiddleware implements NestMiddleware {
   use(req: HttpRequest, res: HttpResponse, next: () => void) {

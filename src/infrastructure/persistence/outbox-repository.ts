@@ -4,8 +4,8 @@ import type { OutboxMessage } from '../../domain/outbox-message';
 import { OutboxMessageRecord } from './records/outbox-message.record';
 
 /**
- * Repositório MikroORM de `outbox_message` (SCHEMA 2.5, 4.5; ARQUITETURA 3, 5; D12, D18, D25, D48, D62).
- * Recebe apenas o `EntityManager` da transação corrente via `RepositoryFactories` do `UnitOfWork` (D25).
+ * Repositório MikroORM de `outbox_message`.
+ * Recebe apenas o `EntityManager` da transação corrente via `RepositoryFactories` do `UnitOfWork`.
  * Erros do driver sobem sem tradução local para serem traduzidos na borda do `MikroOrmUnitOfWork`.
  */
 export class MikroOrmOutboxRepository implements OutboxRepository {
@@ -13,7 +13,7 @@ export class MikroOrmOutboxRepository implements OutboxRepository {
 
   /**
    * Insere um lote de `OutboxMessage` na mesma transação da mudança financeira
-   * (SCHEMA 4.2 passo 9; CHALLENGE §6.5, §11; restrição 4).
+   * (nenhum evento é publicado antes do commit).
    */
   async enqueue(messages: OutboxMessage[]): Promise<void> {
     if (messages.length === 0) return;
@@ -25,9 +25,9 @@ export class MikroOrmOutboxRepository implements OutboxRepository {
   /**
    * Reserva até `limit` mensagens pendentes vencidas (`published_at IS NULL` e
    * `next_attempt_at <= now`) empurrando o lease `next_attempt_at` para `now + leaseMs`
-   * com `FOR UPDATE SKIP LOCKED` (SCHEMA 4.5, D18, D48, D62).
+   * com `FOR UPDATE SKIP LOCKED`.
    * Usa a transação recebida (`this.em`); o worker deve chamá-lo sozinho num `uow.run` curto,
-   * publicar no SQS fora da transação (restrição 4) e gravar `markPublished`/`scheduleRetry`
+   * publicar no SQS fora da transação e gravar `markPublished`/`scheduleRetry`
    * em `uow.run` separados. O SQL seleciona por `next_attempt_at ASC` e o lote reservado é
    * devolvido ordenado por `(occurredAt ASC, id ASC)`.
    */
@@ -65,7 +65,7 @@ export class MikroOrmOutboxRepository implements OutboxRepository {
   }
 
   /**
-   * Marca um evento do outbox como publicado em `at` (SCHEMA 4.5).
+   * Marca um evento do outbox como publicado em `at`.
    * Zero linhas afetadas indica bug (id inexistente) e lança erro.
    */
   async markPublished(id: string, at: Date): Promise<void> {
@@ -85,7 +85,7 @@ export class MikroOrmOutboxRepository implements OutboxRepository {
   /**
    * Persiste `attempts = attempts + 1` no SQL e o `nextAttemptAt` calculado por
    * `message.scheduleRetry(now)` após falha de publicação, apenas para linhas ainda não
-   * publicadas (`published_at IS NULL`, SCHEMA 4.5, D12).
+   * publicadas (`published_at IS NULL`).
    * Zero linhas afetadas indica linha inexistente ou já publicada e lança erro.
    */
   async scheduleRetry(message: OutboxMessage): Promise<void> {
@@ -119,7 +119,7 @@ export class MikroOrmOutboxRepository implements OutboxRepository {
 
   /**
    * Calcula o lag de outbox em segundos: `now - min(occurred_at) WHERE published_at IS NULL`
-   * (SCHEMA 4.6; ARQUITETURA §9). Devolve 0 se não há eventos pendentes.
+   *. Devolve 0 se não há eventos pendentes.
    */
   async computeLagSeconds(now: Date): Promise<number> {
     const rows = await this.em.execute<Array<{ min_occurred_at: string | Date | null }>>(

@@ -19,7 +19,7 @@ describe('C-01 a C-03: Concorrência Real e Disputa de Lock (TESTES §4.3; CHALL
     db = await createTestDatabase();
     queues = await createTestQueues('conc');
 
-    // Sobe o cluster de 3 instâncias com DB_LOCK_TIMEOUT_MS maior (10s) para o portão de lock (TESTES §3.3)
+    // Sobe o cluster de 3 instâncias com DB_LOCK_TIMEOUT_MS maior (10s) para o portão de lock
     cluster = await spawnCluster(3, {
       DB_NAME: db.name,
       SQS_INPUT_QUEUE: queues.input,
@@ -69,7 +69,7 @@ describe('C-01 a C-03: Concorrência Real e Disputa de Lock (TESTES §4.3; CHALL
   });
 
   /**
-   * C-01 (§13.1): Wallet 1000.00. A mesma BET 10.00 50× em paralelo, distribuída em 3 instâncias.
+   * C-01: Wallet 1000.00. A mesma BET 10.00 50× em paralelo, distribuída em 3 instâncias.
    * Uma rodada com portão, outra sem.
    * Verificação: exatamente 1 transação, 1 DEBIT, saldo 990.00.
    * 50 respostas com o mesmo transactionId, 49 com idempotentReplay: true.
@@ -153,7 +153,7 @@ describe('C-01 a C-03: Concorrência Real e Disputa de Lock (TESTES §4.3; CHALL
   );
 
   /**
-   * C-02 (§13.2): Wallet 100.00, duas BET 80.00 (ids diferentes) com portão.
+   * C-02: Wallet 100.00, duas BET 80.00 (ids diferentes) com portão.
    * Verificação: exatamente 1 PROCESSED, 1 REJECTED INSUFFICIENT_FUNDS, saldo 20.00, 1 DEBIT.
    * Reenviar as duas → replays, nada muda.
    */
@@ -216,7 +216,7 @@ describe('C-01 a C-03: Concorrência Real e Disputa de Lock (TESTES §4.3; CHALL
   );
 
   /**
-   * C-02b (§13.2): Wallet 1000.00, 100 BETs de 15.00 com portão.
+   * C-02b: Wallet 1000.00, 100 BETs de 15.00 com portão.
    * Verificação: exatamente 66 PROCESSED e 34 REJECTED, saldo final 10.00.
    */
   test(
@@ -272,8 +272,8 @@ describe('C-01 a C-03: Concorrência Real e Disputa de Lock (TESTES §4.3; CHALL
   );
 
   /**
-   * C-03 (§13.3): 20 wallets, 20 BETs em cada, em paralelo. Portão em UMA wallet só.
-   * Verificação: as outras 19 terminam enquanto a travada espera: o lock não é global (restrição 6).
+   * C-03: 20 wallets, 20 BETs em cada, em paralelo. Portão em UMA wallet só.
+   * Verificação: as outras 19 terminam enquanto a travada espera: o lock não é global.
    */
   test(
     'C-03: 20 wallets em paralelo, portão em uma só: prova ausência de lock global',

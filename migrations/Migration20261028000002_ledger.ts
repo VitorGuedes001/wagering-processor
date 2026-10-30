@@ -1,11 +1,11 @@
 import { Migration } from '@mikro-orm/migrations';
 
 /**
- * `wallet_ledger_entry` (SCHEMA 2.3) e os triggers que amarram wallet e ledger
- * (SCHEMA 3, D16, D17): ledger append-only, cadeia contínua e, no commit, saldo e
+ * `wallet_ledger_entry` e os triggers que amarram wallet e ledger
+ *: ledger append-only, cadeia contínua e, no commit, saldo e
  * `version` da wallet batendo com o último lançamento.
  *
- * `ledger_wallet_match` não está na tabela da SCHEMA 3: é o lado do ledger da
+ * `ledger_wallet_match` é o lado do ledger da
  * mesma checagem do `wallet_ledger_match` (decisão 3 da nota T14, aprovada).
  */
 export class Migration20261028000002_ledger extends Migration {
@@ -38,7 +38,7 @@ export class Migration20261028000002_ledger extends Migration {
       )
     `);
 
-    // §5.5: ledger não é atualizado nem apagado.
+    // ledger não é atualizado nem apagado.
     this.addSql(`
       CREATE FUNCTION ledger_immutable_fn() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
@@ -65,7 +65,7 @@ export class Migration20261028000002_ledger extends Migration {
         FOR EACH STATEMENT EXECUTE FUNCTION ledger_no_truncate_fn()
     `);
 
-    // O FOR UPDATE é reentrante no caminho normal (D15 já segura o lock). Com bug
+    // O FOR UPDATE é reentrante no caminho normal (o use case já segura o lock). Com bug
     // sem lock, serializa os inserts da wallet: em READ COMMITTED cada comando tira
     // snapshot novo, então o SELECT seguinte vê o lançamento que acabou de commitar.
     this.addSql(`

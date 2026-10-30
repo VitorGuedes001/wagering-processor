@@ -10,7 +10,7 @@ export interface CreateLedgerEntryProps {
   id: string;
   walletId: string;
   transactionId: string;
-  /** `version` da wallet **depois** deste lançamento (D16). */
+  /** `version` da wallet **depois** deste lançamento. */
   walletVersion: number;
   direction: LedgerDirection;
   money: Money;
@@ -19,7 +19,7 @@ export interface CreateLedgerEntryProps {
   at: Date;
 }
 
-/** Forma persistida, já com tipos de domínio (D45). */
+/** Forma persistida, já com tipos de domínio. */
 export interface LedgerEntryState {
   id: string;
   walletId: string;
@@ -34,7 +34,7 @@ export interface LedgerEntryState {
 
 /**
  * Lançamento do ledger. Imutável por estrutura: sem campos mutáveis e sem
- * métodos de transição (CHALLENGE §6.4). Só `Wallet.open`, `debit` e `credit`
+ * métodos de transição. Só `Wallet.open`, `debit` e `credit`
  * chamam `create`, então o lançamento nasce junto com a mudança de saldo.
  */
 export class WalletLedgerEntry {
@@ -53,7 +53,7 @@ export class WalletLedgerEntry {
   /**
    * Lança `LedgerArithmeticError` se `money` não for positivo, se as moedas
    * diferirem, se `balanceBefore ± money !== balanceAfter` ou se `balanceAfter`
-   * for negativo (MODELAGEM 6).
+   * for negativo.
    */
   static create(props: CreateLedgerEntryProps): WalletLedgerEntry {
     if (!props.money.isPositive()) {
@@ -93,7 +93,7 @@ export class WalletLedgerEntry {
     );
   }
 
-  /** Reconstrói do banco sem revalidar (§6.0). */
+  /** Reconstrói do banco sem revalidar. */
   static rehydrate(state: LedgerEntryState): WalletLedgerEntry {
     return new WalletLedgerEntry(
       state.id,

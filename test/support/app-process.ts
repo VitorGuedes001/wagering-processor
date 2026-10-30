@@ -49,7 +49,7 @@ export interface AppCluster {
 }
 
 /**
- * Sobe uma instância real da aplicação em processo separado via `Bun.spawn` (TESTES D36, §3.2).
+ * Sobe uma instância real da aplicação em processo separado via `Bun.spawn`.
  * Por padrão usa `PORT: '0'` para alocação dinâmica de porta pelo SO e aguarda `/health/ready` responder 200.
  */
 export async function spawnApp(options: AppProcessOptions = {}): Promise<AppProcess> {
@@ -203,7 +203,7 @@ export async function spawnApp(options: AppProcessOptions = {}): Promise<AppProc
 }
 
 /**
- * Sobe N instâncias da aplicação em processos separados contra o mesmo banco e filas (TESTES D36, §3.2).
+ * Sobe N instâncias da aplicação em processos separados contra o mesmo banco e filas.
  * Fornece distribuição round-robin via `nextUrl()`.
  */
 export async function spawnCluster(

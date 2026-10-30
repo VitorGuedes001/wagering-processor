@@ -2,7 +2,7 @@ import { CurrencyMismatchError, InsufficientFundsError, InvalidMoneyError, Ledge
 import { Money } from './money';
 import { LedgerDirection, WalletLedgerEntry } from './wallet-ledger-entry';
 
-/** Forma persistida, já com tipos de domínio (D45). */
+/** Forma persistida, já com tipos de domínio. */
 export interface WalletState {
   id: string;
   playerId: string;
@@ -18,7 +18,7 @@ export interface OpenWalletProps {
   playerId: string;
   /** Define a moeda da wallet. Zero não gera `OPENING` nem lançamento. */
   initialBalance: Money;
-  /** Id da transação `OPENING`, criada à parte por `WagerTransaction.opening` (D42). */
+  /** Id da transação `OPENING`, criada à parte por `WagerTransaction.opening`. */
   openingTransactionId: string;
   openingEntryId: string;
   at: Date;
@@ -31,7 +31,7 @@ export interface OpenedWallet {
 }
 
 /**
- * Aggregate root e unidade de concorrência (§8). Invariantes em MODELAGEM 3:
+ * Aggregate root e unidade de concorrência. Invariantes:
  * saldo nunca negativo, toda mudança de saldo produz um lançamento, `version`
  * começa em 1 e só sobe quando o saldo muda.
  */
@@ -82,7 +82,7 @@ export class Wallet {
     return { wallet, openingEntry };
   }
 
-  /** Reconstrói do banco sem revalidar (§6.0). */
+  /** Reconstrói do banco sem revalidar. */
   static rehydrate(state: WalletState): Wallet {
     return new Wallet(
       state.id,
@@ -107,7 +107,7 @@ export class Wallet {
     return this._updatedAt;
   }
 
-  /** A regra de negócio consulta antes de debitar (MODELAGEM 5, verificação 10). */
+  /** A regra de negócio consulta antes de debitar (última verificação). */
   canDebit(money: Money): boolean {
     this.assertSameCurrency(money);
     return !this._balance.isLessThan(money);

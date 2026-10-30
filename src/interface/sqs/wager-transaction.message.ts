@@ -7,13 +7,12 @@ import { idempotencyKeyHeaderSchema, wagerTransactionSchema } from '../http/sche
 
 export const WAGER_MESSAGE_TYPE = 'WagerTransactionRequested';
 
-/** Teto do backoff do retry na fila (ARQUITETURA 7.2). */
+/** Teto do backoff do retry na fila. */
 const MAX_RETRY_DELAY_SECONDS = 60;
 
 /**
- * Envelope de CHALLENGE §10. `data` usa o **mesmo** schema do HTTP (D27,
- * ARQUITETURA 7.2), mais `idempotencyKey`, que no HTTP vem do header e com as
- * mesmas regras dele (ARQUITETURA 6.1).
+ * Envelope da fila de entrada. `data` usa o **mesmo** schema do HTTP, mais `idempotencyKey`, que no HTTP vem do header e com as
+ * mesmas regras dele.
  */
 const envelopeShapeSchema = z.object({
   messageId: z.string().min(1).max(256),
@@ -32,7 +31,7 @@ export type ParsedEnvelope =
   | { ok: true; messageId: string; command: WagerCommand }
   | { ok: false; reason: EnvelopeRejection; messageId?: string };
 
-/** `JSON.parse` → envelope → `type` → `data` (ARQUITETURA 7.2). Nunca lança. */
+/** `JSON.parse` → envelope → `type` → `data`. Nunca lança. */
 export function parseEnvelope(body: string): ParsedEnvelope {
   let raw: unknown;
   try {
@@ -67,25 +66,25 @@ export function parseEnvelope(body: string): ParsedEnvelope {
       ...(d.referenceExternalTransactionId !== undefined
         ? { referenceExternalTransactionId: d.referenceExternalTransactionId }
         : {}),
-      // MODELAGEM 8: na fila, correlation e causation são o messageId.
+      // Na fila, correlation e causation são o messageId.
       correlationId: messageId,
       causationId: messageId,
     },
   };
 }
 
-/** O que fazer com a mensagem na fila (ARQUITETURA 7.2). */
+/** O que fazer com a mensagem na fila. */
 export type ConsumerAction =
   | { type: 'ACK'; warn?: string }
   | { type: 'RELEASE_PERMANENT'; reason: string }
   | { type: 'RETRY'; delaySeconds: number; reason: 'TRANSIENT' | 'BUG' };
 
-/** `min(2^receiveCount, 60)` segundos (ARQUITETURA 7.2). */
+/** `min(2^receiveCount, 60)` segundos. */
 export function retryDelaySeconds(receiveCount: number): number {
   return Math.min(2 ** receiveCount, MAX_RETRY_DELAY_SECONDS); // não é caminho de dinheiro
 }
 
-/** Tabela de ARQUITETURA 7.2 para os desfechos-valor do use case (D26). */
+/** Ação na fila para cada desfecho-valor do use case. */
 export function classifyOutcome(outcome: SubmitOutcome): ConsumerAction {
   switch (outcome.type) {
     case 'RESULT':
@@ -96,12 +95,12 @@ export function classifyOutcome(outcome: SubmitOutcome): ConsumerAction {
     case 'EXTERNAL_ID_CONFLICT':
       return { type: 'ACK', warn: outcome.type };
     case 'MESSAGE_PAYLOAD_MISMATCH':
-      // D7: anomalia do transporte, sem resposta "certa". Vai para a DLQ.
+      // Anomalia do transporte, sem resposta "certa". Vai para a DLQ.
       return { type: 'RELEASE_PERMANENT', reason: outcome.type };
   }
 }
 
-/** Exceções que escapam do use case (ARQUITETURA 4.1, MODELAGEM 10.4). */
+/** Exceções que escapam do use case. */
 export function classifyError(
   error: unknown,
   receiveCount: number,

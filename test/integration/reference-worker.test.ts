@@ -9,8 +9,8 @@ import { assertAllWalletsConsistent } from '../support/invariants';
 import { createTestQueues, deleteTestQueues, type TestQueues } from '../support/queues';
 
 /**
- * Worker de `PENDING_REFERENCE` com a aplicação real em processo (TESTES D36, §3.2):
- * backoff e poll reduzidos por env, mesma lógica. Banco e filas do arquivo (D34/D35).
+ * Worker de `PENDING_REFERENCE` com a aplicação real em processo:
+ * backoff e poll reduzidos por env, mesma lógica. Banco e filas do arquivo.
  */
 let db: TestDatabase;
 let queues: TestQueues;
@@ -171,7 +171,7 @@ describe('I-19: referência que nunca chega vira REFERENCE_NOT_FOUND (TESTES §4
     );
 
     expect(rejected.failure_code).toBe('REFERENCE_NOT_FOUND');
-    // D57: exatamente REFERENCE_MAX_ATTEMPTS tentativas do worker, sem um ciclo extra.
+    // Exatamente REFERENCE_MAX_ATTEMPTS tentativas do worker, sem um ciclo extra.
     expect(rejected.reference_attempts).toBe(MAX_ATTEMPTS);
     expect(rejected.next_reference_attempt_at).toBeNull();
     expect(rejected.balance_after).toBe('1000.00');
@@ -181,13 +181,13 @@ describe('I-19: referência que nunca chega vira REFERENCE_NOT_FOUND (TESTES §4
     `;
     expect(ledger?.count).toBe(0);
 
-    // Retry não emite evento (MODELAGEM 5): só o PendingReference inicial e o Rejected final.
+    // Retry não emite evento: só o PendingReference inicial e o Rejected final.
     expect(await eventCounts(refundId)).toEqual({
       WagerTransactionPendingReference: 1,
       WagerTransactionRejected: 1,
     });
 
-    // Métricas do worker (ARQUITETURA 9).
+    // Métricas do worker.
     const metrics = await (await fetch(`${app.url}/metrics`)).text();
     expect(metrics).toContain('wagering_retries_total{component="reference_worker"}');
     expect(metrics).toContain('wagering_transactions_total{kind="REFUND",status="REJECTED"}');

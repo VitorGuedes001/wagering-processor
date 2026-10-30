@@ -29,12 +29,12 @@ const RETRY_COMPONENT = 'sqs-consumer';
 const RECEIVE_ERROR_PAUSE_MS = 1_000;
 
 /**
- * Consumidor de `wager-transactions.fifo` (CHALLENGE §10, ARQUITETURA 7.2).
+ * Consumidor de `wager-transactions.fifo`.
  *
- * - chama o **mesmo** use case do HTTP, com a inbox na mesma transação (D24);
+ * - chama o **mesmo** use case do HTTP, com a inbox na mesma transação;
  * - faz ack só depois do commit; nunca envia à DLQ: a mensagem chega lá pelo
  *   redrive, depois de `maxReceiveCount` entregas sem ack;
- * - nenhum estado de correção em memória (restrição 8): o que fica aqui é só o
+ * - nenhum estado de correção em memória: o que fica aqui é só o
  *   controle do laço e das mensagens em andamento.
  */
 @Injectable()
@@ -59,7 +59,7 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
   onApplicationBootstrap(): void {
     if (!this.config.ENABLE_CONSUMER) return;
     this.running = true;
-    // Lê a política de redrive cedo; falha aqui não impede o consumo (D63).
+    // Lê a política de redrive cedo; falha aqui não impede o consumo.
     this.queue.maxReceiveCount().then(
       (max) => {
         if (max === undefined) {
@@ -76,7 +76,7 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
   }
 
   /**
-   * `SIGTERM` (ARQUITETURA 7.3, passos 1–3): para de receber, espera as
+   * `SIGTERM`: para de receber, espera as
    * mensagens em andamento até `SHUTDOWN_GRACE_MS` e devolve à fila as que
    * ainda não começaram. Roda antes de o MikroORM e o SQS fecharem.
    */
@@ -120,7 +120,7 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
 
   /**
    * Mesmo `MessageGroupId` em sequência, grupos diferentes em paralelo: mantém a
-   * ordem do FIFO como otimização (ARQUITETURA 7.2). A correção vem do banco.
+   * ordem do FIFO como otimização. A correção vem do banco.
    */
   private dispatch(messages: InputMessage[]): void {
     const groups = new Map<string, InputMessage[]>();
@@ -137,7 +137,7 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
         for (const message of group) {
           try {
             if (this.running) await this.handle(message);
-            else await this.safely('releaseNow', () => this.queue.releaseNow(message)); // 7.3 passo 3
+            else await this.safely('releaseNow', () => this.queue.releaseNow(message)); // desligando: devolve à fila
           } finally {
             this.outstanding -= 1;
           }
@@ -189,7 +189,7 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
         this.logger.warn({ message: 'mensagem sem efeito', outcome: action.warn }, LOG_CONTEXT);
       }
       if (action.type === 'RELEASE_PERMANENT') {
-        // D7: mesmo messageId com payload diferente.
+        // Mesmo messageId com payload diferente.
         this.logger.error({ message: 'messageId repetido com payload diferente', outcome: outcome.type }, LOG_CONTEXT);
       }
       return action;
@@ -208,7 +208,7 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
 
   private async apply(action: ConsumerAction, parsed: ParsedEnvelope, message: InputMessage): Promise<void> {
     if (action.type === 'ACK') {
-      // TESTES 3.4: depois do COMMIT, antes do DeleteMessage (C-05).
+      // Ponto de falha de teste: depois do COMMIT, antes do DeleteMessage.
       FaultInjector.hit(FaultPoint.ConsumerAfterCommitBeforeAck);
       await this.safely('DeleteMessage', () => this.queue.ack(message));
       return;
@@ -231,7 +231,7 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
     await this.safely('ChangeMessageVisibility', () => this.queue.delay(message, action.delaySeconds));
   }
 
-  /** D64: `FAILED` só na última entrega, com comando válido e falha transitória ou bug. */
+  /** `FAILED` só na última entrega, com comando válido e falha transitória ou bug. */
   private async recordFailed(parsed: Extract<ParsedEnvelope, { ok: true }>): Promise<void> {
     try {
       const result = await this.recordFailure.execute(parsed.command);

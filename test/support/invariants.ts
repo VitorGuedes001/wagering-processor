@@ -6,7 +6,7 @@ function getSql(dbOrSql: TestDatabase | SQL): SQL {
 }
 
 /**
- * Invariante final de todos os testes de integração e concorrência (TESTES D40, §3.5).
+ * Invariante final de todos os testes de integração e concorrência.
  * Roda em SQL puro, independente do código da aplicação:
  *   1. para cada wallet, `balance = Σ(CREDIT) - Σ(DEBIT)` do ledger;
  *   2. a cadeia `balance_before = lag(balance_after)` (ou 0 no primeiro lançamento) não tem buraco

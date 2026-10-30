@@ -16,10 +16,10 @@ export interface ReconciliationResult {
 }
 
 /**
- * Recalcula o saldo pelo ledger e confere a cadeia (MODELAGEM 11). Só sinaliza:
+ * Recalcula o saldo pelo ledger e confere a cadeia. Só sinaliza:
  * divergência nunca é corrigida aqui. `entries` vem em ordem de `walletVersion`.
  *
- * Atenção: wallet aberta com saldo zero não gera `OPENING` (MODELAGEM 3), então o
+ * Atenção: wallet aberta com saldo zero não gera `OPENING`, então o
  * primeiro lançamento tem `walletVersion = 2` e `balanceBefore = 0.00`. A verificação
  * confere a cadeia de saldos (partindo de zero e com cada lançamento internamente
  * balanceado), e não a contiguidade de `walletVersion`.

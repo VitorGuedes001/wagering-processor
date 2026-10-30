@@ -11,7 +11,7 @@ import { WagerTransactionRecord } from './records/wager-transaction.record';
 
 /**
  * Converte `WagerTransactionRecord` lido do banco em `WagerTransaction` de domínio
- * (SCHEMA §2, §7; MODELAGEM D45). Dinheiro chega como `string` e passa por
+ * Dinheiro chega como `string` e passa por
  * `Money.fromPersistence`.
  */
 export function toWagerTransactionDomain(record: WagerTransactionRecord): WagerTransaction {
@@ -77,8 +77,8 @@ export function toWagerTransactionRecordData(
 }
 
 /**
- * Implementação MikroORM/PostgreSQL de `WagerTransactionRepository` (ARQUITETURA §3, SCHEMA §2.2, §4.5, §7).
- * Recebe apenas o `EntityManager` da transação corrente via `RepositoryFactories` do `UnitOfWork` (D25).
+ * Implementação MikroORM/PostgreSQL de `WagerTransactionRepository`.
+ * Recebe apenas o `EntityManager` da transação corrente via `RepositoryFactories` do `UnitOfWork`.
  * Erros do driver sobem sem tradução local para serem traduzidos na borda do `MikroOrmUnitOfWork`.
  */
 export class MikroOrmWagerTransactionRepository implements WagerTransactionRepository {
@@ -119,7 +119,7 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
 
   /**
    * Verifica se já existe reversão (`REFUND` ou `ROLLBACK`) `PROCESSED` apontando
-   * para `referenceTransactionId` (MODELAGEM D1, índice `wager_tx_single_reversal_uq`).
+   * para `referenceTransactionId` (índice `wager_tx_single_reversal_uq`).
    */
   async hasProcessedReversal(referenceTransactionId: string): Promise<boolean> {
     const count = await this.em.count(WagerTransactionRecord, {
@@ -131,7 +131,7 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
   }
 
   /**
-   * `SELECT … FOR UPDATE` (SCHEMA §4.5, §7).
+   * `SELECT … FOR UPDATE`.
    * Usado pelo worker de `PENDING_REFERENCE` após travar a wallet.
    */
   async lockById(id: string): Promise<WagerTransaction | undefined> {
@@ -146,7 +146,7 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
   /**
    * Reserva por lease (`next_reference_attempt_at = now + leaseMs`) até `limit`
    * transações em `PENDING_REFERENCE` vencidas (`next_reference_attempt_at <= now`),
-   * usando `FOR UPDATE SKIP LOCKED` (SCHEMA D18, §4.5, §7).
+   * usando `FOR UPDATE SKIP LOCKED`.
    */
   async claimDuePendingReferences(now: Date, limit: number, leaseMs: number): Promise<string[]> {
     if (limit <= 0) {
@@ -186,7 +186,7 @@ export class MikroOrmWagerTransactionRepository implements WagerTransactionRepos
 
   /**
    * Atualiza apenas as colunas mutáveis permitidas pelo trigger `wager_tx_guard`
-   * (SCHEMA §3, MODELAGEM §4.3). Lança erro se a linha não existir.
+   *. Lança erro se a linha não existir.
    */
   async update(transaction: WagerTransaction): Promise<void> {
     const affectedRows = await this.em.nativeUpdate(

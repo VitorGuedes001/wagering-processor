@@ -31,10 +31,10 @@ export interface PublishOutboxOutcome {
 }
 
 /**
- * Use case PublishOutbox (CHALLENGE §6.5, §11; ARQUITETURA §2.1, §4; D18, D20, D62).
- * Executa o ciclo de outbox em três passos separados (D62):
+ * Use case PublishOutbox.
+ * Executa o ciclo de outbox em três passos separados:
  * 1. Claim por lease com SKIP LOCKED em uow.run curto;
- * 2. Publicação no SQS fora de transação (restrição 4);
+ * 2. Publicação no SQS fora de transação;
  * 3. markPublished ou scheduleRetry de cada mensagem no seu próprio uow.run curto.
  */
 export class PublishOutbox {
@@ -50,7 +50,7 @@ export class PublishOutbox {
     const leaseMs = options?.leaseMs ?? 30_000;
     const hooks = options?.hooks;
 
-    // 1. Claim curto na UoW com FOR UPDATE SKIP LOCKED e lease (D18, D62)
+    // 1. Claim curto na UoW com FOR UPDATE SKIP LOCKED e lease
     const messages = await this.uow.run(async (tx) => {
       return await tx.outbox.claimDue(now, batch, leaseMs);
     });
@@ -59,7 +59,7 @@ export class PublishOutbox {
       hooks?.afterClaim?.(messages);
     }
 
-    // 2. Publicação SQS fora de transação e marcação atômica por item (restrição 4, D62)
+    // 2. Publicação SQS fora de transação e marcação atômica por item
     const results: PublishOutboxItemResult[] = [];
     let published = 0;
     let failed = 0;

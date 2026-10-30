@@ -3,8 +3,8 @@ import { Entity, PrimaryKey, Property } from '@mikro-orm/decorators/legacy';
 import { InboxMessage } from '../../../domain/inbox-message';
 
 /**
- * Entidade de persistência da tabela `inbox_message` (SCHEMA 2.4, 7).
- * Separada de `InboxMessage` para manter o domínio livre de ORM (§6.1, A-01).
+ * Entidade de persistência da tabela `inbox_message`.
+ * Separada de `InboxMessage` para manter o domínio livre de ORM.
  */
 @Entity({ tableName: 'inbox_message' })
 export class InboxMessageRecord {

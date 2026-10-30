@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto';
 import type { MoneyProps } from '../../src/domain/money';
 import { type SubmittableKind, WagerTransactionKind } from '../../src/domain/wager-transaction';
 
-/** Fixture literal de criação de wallet em CHALLENGE.md §9. */
+/** Fixture literal de criação de wallet, como no enunciado. */
 export const CHALLENGE_WALLET_FIXTURE = {
   playerId: '0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1',
   initialBalance: { amount: '1000.00', currency: 'BRL' },
 } as const;
 
-/** Fixture literal de resposta de wallet em CHALLENGE.md §9. */
+/** Fixture literal de resposta de wallet, como no enunciado. */
 export const CHALLENGE_WALLET_RESPONSE_FIXTURE = {
   id: '0192f291-27dd-7d3f-8071-5f8685deef37',
   playerId: '0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1',
@@ -16,7 +16,7 @@ export const CHALLENGE_WALLET_RESPONSE_FIXTURE = {
   version: 1,
 } as const;
 
-/** Fixture literal de submissão HTTP em CHALLENGE.md §9 (TESTES §5: JSON literal independente do enum). */
+/** Fixture literal de submissão HTTP, como no enunciado (JSON literal, independente do enum). */
 export const CHALLENGE_WAGER_FIXTURE = {
   providerId: 'provider-a',
   externalTransactionId: 'transaction-123',
@@ -28,7 +28,7 @@ export const CHALLENGE_WAGER_FIXTURE = {
   money: { amount: '25.00', currency: 'BRL' },
 } as const;
 
-/** Fixture literal de mensagem SQS em CHALLENGE.md §10 (TESTES §5: JSON literal independente do enum). */
+/** Fixture literal de mensagem SQS, como no enunciado (JSON literal, independente do enum). */
 export const CHALLENGE_SQS_MESSAGE_FIXTURE = {
   messageId: 'msg-123',
   type: 'WagerTransactionRequested',
@@ -72,7 +72,7 @@ export interface WagerRequestFixture {
 }
 
 export interface WagerBuilderOverrides extends Partial<WagerRequestFixture> {
-  /** Atalho para `money.amount` (ex.: `aBet({ amount: '80.00' })`, TESTES §5). */
+  /** Atalho para `money.amount` (ex.: `aBet({ amount: '80.00' })`). */
   amount?: string;
   /** Atalho para `money.currency`. */
   currency?: string;

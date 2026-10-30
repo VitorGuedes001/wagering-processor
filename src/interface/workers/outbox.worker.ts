@@ -15,8 +15,8 @@ import { MetricsRegistry } from '../../infrastructure/observability/metrics';
 import { OutboxLagProbe } from '../../infrastructure/persistence/outbox-lag-probe';
 
 /**
- * Worker de publicação transacional de outbox (CHALLENGE §6.5, §11; ARQUITETURA §7.3; D18, D20, D32, D62).
- * Agenda e executa o use case `PublishOutbox` preso ao ciclo de vida do Nest (D32, §7.3).
+ * Worker de publicação transacional de outbox.
+ * Agenda e executa o use case `PublishOutbox` preso ao ciclo de vida do Nest.
  * Observabilidade: wagering_outbox_lag_seconds, wagering_outbox_published_total, wagering_retries_total.
  */
 @Injectable()
@@ -119,7 +119,7 @@ export class OutboxWorker
   }
 
   /**
-   * Executa uma rodada do ciclo de outbox chamando o use case PublishOutbox (D62).
+   * Executa uma rodada do ciclo de outbox chamando o use case PublishOutbox.
    * Devolve a quantidade de mensagens publicadas com sucesso nesta rodada.
    */
   async tick(now: Date = this.clock.now()): Promise<number> {
@@ -167,15 +167,15 @@ export class OutboxWorker
       }
     }
 
-    // Atualiza métrica de lag a cada tick (SCHEMA 4.6, ARQUITETURA §9)
+    // Atualiza métrica de lag a cada tick
     await this.updateLag(now);
 
     return outcome.published;
   }
 
   /**
-   * Lag de outbox: `now - min(occurred_at) WHERE published_at IS NULL` (SCHEMA 4.6;
-   * ARQUITETURA §9). Lido pelo `OutboxLagProbe`, fora da porta `OutboxRepository` (D74).
+   * Lag de outbox: `now - min(occurred_at) WHERE published_at IS NULL`.
+   * Lido pelo `OutboxLagProbe`, fora da porta `OutboxRepository`.
    */
   async computeLag(now: Date = this.clock.now()): Promise<number> {
     return this.lagProbe.lagSeconds(now);

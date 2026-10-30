@@ -17,9 +17,9 @@ export enum WagerTransactionKind {
 export type SubmittableKind = Exclude<WagerTransactionKind, WagerTransactionKind.Opening>;
 
 export enum WagerTransactionStatus {
-  /** Aceita, ainda não aplicada. Não é gravada: a decisão acontece antes do INSERT (SCHEMA 2.2). */
+  /** Aceita, ainda não aplicada. Não é gravada: a decisão acontece antes do INSERT. */
   Pending = 'PENDING',
-  /** Aguardando a transação referenciada (§7.1). Não terminal. */
+  /** Aguardando a transação referenciada. Não terminal. */
   PendingReference = 'PENDING_REFERENCE',
   /** Aplicada. Terminal. */
   Processed = 'PROCESSED',
@@ -29,7 +29,7 @@ export enum WagerTransactionStatus {
   Failed = 'FAILED',
 }
 
-/** Tentativas e backoff da resolução de referência (D11). Valores vindos de env (D43). */
+/** Tentativas e backoff da resolução de referência. Valores vindos de env. */
 export interface BackoffPolicy {
   baseMs: number;
   maxMs: number;
@@ -48,7 +48,7 @@ export interface CreateWagerTransactionProps {
   gameId: string;
   kind: SubmittableKind;
   money: Money;
-  /** Obrigatória em `REFUND`/`ROLLBACK`, opcional em `WIN`/`LOSS`, proibida em `BET` (MODELAGEM 4.2). */
+  /** Obrigatória em `REFUND`/`ROLLBACK`, opcional em `WIN`/`LOSS`, proibida em `BET`. */
   referenceExternalTransactionId?: string;
   at: Date;
 }
@@ -62,8 +62,8 @@ export interface OpeningTransactionProps {
 }
 
 /**
- * Forma persistida, já com tipos de domínio (D45). Os campos de provedor são
- * ausentes só no `OPENING` (SCHEMA 2.2, `wager_tx_provider_fields_ck`).
+ * Forma persistida, já com tipos de domínio. Os campos de provedor são
+ * ausentes só no `OPENING` (`wager_tx_provider_fields_ck`).
  */
 export interface WagerTransactionState {
   id: string;
@@ -91,7 +91,7 @@ export interface WagerTransactionState {
 
 /**
  * Uma operação de provedor (ou a abertura interna da wallet). Transições em
- * MODELAGEM 4.3: `PROCESSED`, `REJECTED` e `FAILED` são terminais, e tentar
+ * `PROCESSED`, `REJECTED` e `FAILED` são terminais, e tentar
  * transicioná-las lança `InvalidTransactionStateError` (bug, não negócio).
  */
 export class WagerTransaction {
@@ -116,14 +116,14 @@ export class WagerTransaction {
     private _referenceTransactionId: string | undefined,
     private _failureCode: FailureCode | undefined,
     private _processedAt: Date | undefined,
-    /** Snapshot do saldo no desfecho, para o replay (D10). */
+    /** Snapshot do saldo no desfecho, para o replay. */
     private _balanceAfter: Money | undefined,
     private _referenceAttempts: number,
     private _nextReferenceAttemptAt: Date | undefined,
   ) {}
 
   /**
-   * Nasce em `PENDING`. Valida a forma por kind (MODELAGEM 4.2) e lança
+   * Nasce em `PENDING`. Valida a forma por kind e lança
    * `InvalidWagerRequestError`: referência faltando ou proibida, referência
    * para a própria `externalTransactionId`, valor fora da regra do kind.
    */
@@ -142,7 +142,7 @@ export class WagerTransaction {
     if (reference !== undefined && reference === props.externalTransactionId) {
       throw new InvalidWagerRequestError('a referência aponta para a própria transação');
     }
-    // `LOSS` aceita zero (D3); os demais exigem > 0. `Money.from` já barrou negativo.
+    // `LOSS` aceita zero; os demais exigem > 0. `Money.from` já barrou negativo.
     const amountOk =
       props.kind === WagerTransactionKind.Loss ? !props.money.isNegative() : props.money.isPositive();
     if (!amountOk) {
@@ -174,9 +174,9 @@ export class WagerTransaction {
     );
   }
 
-  /** `OPENING` da wallet: nasce `PROCESSED`, com `balanceAfter = money` e sem campos de provedor (D42). */
+  /** `OPENING` da wallet: nasce `PROCESSED`, com `balanceAfter = money` e sem campos de provedor. */
   static opening(props: OpeningTransactionProps): WagerTransaction {
-    // MODELAGEM 4.2: `OPENING > 0`. Saldo inicial zero não gera abertura (MODELAGEM 3).
+    // `OPENING > 0`. Saldo inicial zero não gera abertura.
     if (!props.money.isPositive()) {
       throw new InvalidWagerRequestError(`valor fora da regra de OPENING: ${props.money.toString()}`);
     }
@@ -205,7 +205,7 @@ export class WagerTransaction {
     );
   }
 
-  /** Reconstrói do banco sem revalidar transições (§6.0). */
+  /** Reconstrói do banco sem revalidar transições. */
   static rehydrate(state: WagerTransactionState): WagerTransaction {
     return new WagerTransaction(
       state.id,
@@ -264,7 +264,7 @@ export class WagerTransaction {
     return this._nextReferenceAttemptAt;
   }
 
-  // ---- transições (D46). Origem permitida: PENDING ou PENDING_REFERENCE, salvo indicação.
+  // ---- transições. Origem permitida: PENDING ou PENDING_REFERENCE, salvo indicação.
 
   markProcessed(referenceTransactionId: string | undefined, balanceAfter: Money, at: Date): void {
     this.assertStatus('markProcessed', OPEN_STATUSES);
@@ -360,7 +360,7 @@ export class WagerTransaction {
     }
   }
 
-  /** Origem fora da lista: terminal ou não permitida (MODELAGEM 4.3). É bug, nunca `failureCode`. */
+  /** Origem fora da lista: terminal ou não permitida. É bug, nunca `failureCode`. */
   private assertStatus(method: string, allowed: readonly WagerTransactionStatus[]): void {
     if (!allowed.includes(this._status)) {
       throw new InvalidTransactionStateError(`${method} não é permitido a partir de ${this._status} (${this.id})`);
@@ -387,7 +387,7 @@ const REFERENCE_REQUIRED_KINDS: ReadonlySet<WagerTransactionKind> = new Set([
   WagerTransactionKind.Rollback,
 ]);
 
-/** Kinds que um `ROLLBACK` pode referenciar (MODELAGEM 4.2). */
+/** Kinds que um `ROLLBACK` pode referenciar. */
 const ROLLBACKABLE_KINDS: ReadonlySet<WagerTransactionKind> = new Set([
   WagerTransactionKind.Bet,
   WagerTransactionKind.Win,
@@ -406,7 +406,7 @@ const TERMINAL_STATUSES: ReadonlySet<WagerTransactionStatus> = new Set([
 ]);
 
 /**
- * `now + min(baseMs × 2^attempts, maxMs)` (D11). Não é caminho de dinheiro, então
+ * `now + min(baseMs × 2^attempts, maxMs)`. Não é caminho de dinheiro, então
  * `number` vale. `2 ** attempts` vira `Infinity` em expoente alto e o `min` devolve `maxMs`.
  */
 function nextAttemptAt(now: Date, attempts: number, policy: BackoffPolicy): Date {

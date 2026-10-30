@@ -1,5 +1,5 @@
 /**
- * Injetor de falhas em pontos nomeados de teste (TESTES D38, §3.4, §6).
+ * Injetor de falhas em pontos nomeados de teste.
  * Se `process.env.FAULT_POINT === point`, encerra o processo imediatamente com `SIGKILL`.
  * Fora de teste, a variável não existe e o custo de execução é uma checagem de string/undefined.
  */

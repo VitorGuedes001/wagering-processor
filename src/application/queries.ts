@@ -1,7 +1,7 @@
 import type { LedgerEntryView, LedgerPageView, TransactionView, WalletView } from './contracts';
 import type { UnitOfWork } from './ports';
 
-/** `ledger_entries.wallet_version` é `integer` no Postgres (SCHEMA 3). */
+/** `ledger_entries.wallet_version` é `integer` no Postgres. */
 const MAX_WALLET_VERSION = 2_147_483_647;
 const BASE64URL_REGEX = /^[A-Za-z0-9_-]+$/;
 
@@ -43,7 +43,7 @@ export interface TransactionQueriesPort {
 }
 
 /**
- * Leituras simples de wallet (ARQUITETURA §2.1, queries.ts).
+ * Leituras simples de wallet.
  */
 export class ApplicationWalletQueries implements WalletQueriesPort {
   constructor(private readonly uow: UnitOfWork) {}

@@ -6,7 +6,7 @@ export interface WalletLockGate {
   readonly walletId: string;
   /**
    * Aguarda até que exatamente `expectedCount` transações estejam bloqueadas
-   * disputando o lock desta wallet em `pg_stat_activity` (TESTES D37, §3.3).
+   * disputando o lock desta wallet em `pg_stat_activity`.
    */
   waitForWaiters(expectedCount: number, options?: { timeoutMs?: number }): Promise<number>;
   /** Consulta a contagem instantânea de transações bloqueadas por Lock nesta base. */
@@ -18,7 +18,7 @@ export interface WalletLockGate {
 }
 
 /**
- * Portão de lock para forçar contenção determinística de concorrência (TESTES D37, §3.3).
+ * Portão de lock para forçar contenção determinística de concorrência.
  * Trava a wallet numa conexão própria com `SELECT ... FOR UPDATE`, permitindo disparar N requisições,
  * esperar que todas apareçam bloqueadas em `pg_stat_activity` e só então soltar.
  */

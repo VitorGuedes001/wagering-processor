@@ -9,13 +9,13 @@ import {
 } from '@aws-sdk/client-sqs';
 import { APP_CONFIG, type AppConfig } from '../config';
 
-/** Long polling de 20 s e lotes de até 10 (ARQUITETURA 7.2). */
+/** Long polling de 20 s e lotes de até 10. */
 const WAIT_TIME_SECONDS = 20;
 const MAX_BATCH = 10;
 
-/** Mensagem da fila de entrada, sem tipos do SDK, para a camada `interface` (ARQUITETURA §2). */
+/** Mensagem da fila de entrada, sem tipos do SDK, para a camada `interface`. */
 export interface InputMessage {
-  /** `MessageId` do SQS. Só para log: a inbox usa o `messageId` do envelope (CHALLENGE §10). */
+  /** `MessageId` do SQS. Só para log: a inbox usa o `messageId` do envelope. */
   sqsMessageId: string;
   receiptHandle: string;
   body: string;
@@ -26,7 +26,7 @@ export interface InputMessage {
 }
 
 /**
- * Adaptador da fila de entrada `SQS_INPUT_QUEUE` (ARQUITETURA 7.1/7.2). Único
+ * Adaptador da fila de entrada `SQS_INPUT_QUEUE`. Único
  * ponto do consumidor que conhece o AWS SDK. A DLQ não aparece aqui: a mensagem
  * chega nela pelo redrive, nunca por envio manual.
  */
@@ -70,7 +70,7 @@ export class SqsInputQueue {
     });
   }
 
-  /** `DeleteMessage`. Só depois do commit (CHALLENGE §10). */
+  /** `DeleteMessage`. Só depois do commit. */
   async ack(message: InputMessage): Promise<void> {
     await this.sqs.send(
       new DeleteMessageCommand({ QueueUrl: await this.url(), ReceiptHandle: message.receiptHandle }),
@@ -94,7 +94,7 @@ export class SqsInputQueue {
   }
 
   /**
-   * `maxReceiveCount` da `RedrivePolicy` da fila, lido uma vez (D63): a
+   * `maxReceiveCount` da `RedrivePolicy` da fila, lido uma vez: a
    * fila é a fonte da verdade. Sem política, devolve `undefined`.
    */
   maxReceiveCount(): Promise<number | undefined> {

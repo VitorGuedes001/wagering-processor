@@ -4,7 +4,7 @@ import { Money } from '../../domain/money';
 import { LedgerDirection, WalletLedgerEntry } from '../../domain/wallet-ledger-entry';
 import { LedgerEntryRecord } from './records/ledger-entry.record';
 
-/** Append-only (§6.4): não existe `update` nem `delete`, e o schema também recusa. */
+/** Append-only: não existe `update` nem `delete`, e o schema também recusa. */
 export class MikroOrmLedgerRepository implements LedgerRepository {
   constructor(private readonly em: EntityManager) {}
 
@@ -23,7 +23,7 @@ export class MikroOrmLedgerRepository implements LedgerRepository {
     });
   }
 
-  /** Cursor por `wallet_version` (SCHEMA 6), estável porque o ledger é imutável. */
+  /** Cursor por `wallet_version`, estável porque o ledger é imutável. */
   async page(walletId: string, afterVersion: number, limit: number): Promise<WalletLedgerEntry[]> {
     const records = await this.em.find(
       LedgerEntryRecord,

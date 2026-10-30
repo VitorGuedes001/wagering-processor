@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 /**
- * Contexto de uma requisição ou mensagem (ARQUITETURA §9, D29). Um único store
+ * Contexto de uma requisição ou mensagem. Um único store
  * para quem grava (middleware HTTP, consumidor SQS) e quem lê (logger).
  */
 export interface RequestContext {
